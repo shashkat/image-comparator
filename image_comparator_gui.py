@@ -26,7 +26,6 @@ import math
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
-
 class ImageComparator:
     def __init__(self, image_paths, num_cols=2):
         """
@@ -64,7 +63,8 @@ class ImageComparator:
         fig_width = 8 * self.num_cols
         fig_height = 6 * self.num_rows
         self.fig, self.axes = plt.subplots(self.num_rows, self.num_cols, 
-                                           figsize=(fig_width, fig_height))
+                                           figsize=(fig_width, fig_height), 
+                                           layout='constrained')
         
         # Make axes always iterable (handle single row/col cases)
         if self.num_images == 1:
@@ -126,7 +126,7 @@ class ImageComparator:
                 ax.set_title(f"{filename} (ERROR)", fontsize=10)
                 ax.axis('off')
         
-        self.fig.tight_layout()
+        # self.fig.tight_layout()
         self.fig.canvas.draw()
     
     def _on_key(self, event):
