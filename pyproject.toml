@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "image-comparator"
+version = "0.1.0"
+description = "Compare sets of images side by side with keyboard navigation"
+requires-python = ">=3.10"
+dependencies = [
+  "matplotlib",
+  "numpy",
+  "Pillow",
+  "pdf2image",
+  "reportlab",
+]
+
+[project.scripts]
+image-comparator = "image_comparator.app:main"

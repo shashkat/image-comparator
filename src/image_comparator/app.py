@@ -19,7 +19,8 @@ matplotlib.use('TkAgg')  # Use TkAgg backend for compatibility with tkinter
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
-from pdf2image import convert_from_path
+# from pdf2image import convert_from_path
+import pymupdf
 import numpy as np
 from PIL import Image
 import math
@@ -99,8 +100,21 @@ class ImageComparator:
         
         if filepath.suffix.lower() == '.pdf':
             # Convert PDF to image (first page only)
-            images = convert_from_path(str(filepath), first_page=1, last_page=1)
-            return np.array(images[0])
+            # images = convert_from_path(str(filepath), first_page=1, last_page=1)
+
+            doc = pymupdf.open(str(filepath))
+
+            # Render the first PDF page at higher resolution.
+            page = doc[0]
+            pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False)
+
+            # Convert the rendered page to an image array for matplotlib.
+            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+                pix.height, pix.width, pix.n
+            )
+            doc.close()
+
+            return img
         else:
             # Load regular image
             return mpimg.imread(str(filepath))
