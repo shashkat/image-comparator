@@ -43,14 +43,14 @@ class ImageComparator:
         # Convert paths and get directories
         self.paths = [Path(p).resolve() for p in image_paths]
         self.dirs = [p.parent for p in self.paths]
-        
+
         # Get all image files in each directory (sorted alphabetically)
         self.all_files = []
         self.indices = []
         
         for i, path in enumerate(self.paths):
             files = self._get_image_files(self.dirs[i])
-            self.all_files.append(files)
+            self.all_files.append(files) # note that this is appending the whole list into the all_files list. So after this all_files becomes a list of lists
             
             # Find index of the starting file
             try:
@@ -76,7 +76,8 @@ class ImageComparator:
         for i in range(self.num_images, len(self.axes)):
             self.axes[i].axis('off')
         
-        self.fig.canvas.mpl_connect('key_press_event', self._on_key)
+        self.fig.canvas.mpl_connect('key_press_event', self._on_key) # register the self._on_key method as a callback for the matplotlib 
+        # event 'key_press_event', which is emitted when a key is pressed on the keyboard when the canvas is active
         
         # Display initial images
         self.update_display()
@@ -86,14 +87,14 @@ class ImageComparator:
         image_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
         files = []
         
-        for file in sorted(directory.iterdir()):
+        for file in sorted(directory.iterdir()): # directory.iterdir() lists all the files in a given directory
             if file.is_file() and file.suffix.lower() in image_extensions:
                 files.append(file)
         
         return files
     
     def _load_image(self, filepath):
-        """Load an image file (handles PDFs and regular images)."""
+        """Load an image file (handles PDFs and regular images). Returns np.array()"""
         filepath = Path(filepath)
         
         if filepath.suffix.lower() == '.pdf':
@@ -112,7 +113,7 @@ class ImageComparator:
             ax.clear()
             
             try:
-                img = self._load_image(self.all_files[i][self.indices[i]])
+                img = self._load_image(self.all_files[i][self.indices[i]]) # img is a np.array
                 ax.imshow(img)
                 filename = self.all_files[i][self.indices[i]].name
                 position = f"({self.indices[i] + 1}/{len(self.all_files[i])})"
@@ -166,45 +167,46 @@ class ConfigDialog:
     """GUI dialog for selecting files and configuring the layout."""
     
     def __init__(self):
-        self.root = tk.Tk()
+        self.root = tk.Tk() # self.root is toplevel widget on a certain screen
         self.root.title("Image Comparator Configuration")
         self.root.geometry("900x700")
         
         # Force window to appear on top and gain focus
-        self.root.lift()
-        self.root.attributes('-topmost', True)
-        self.root.after_idle(self.root.attributes, '-topmost', False)
-        self.root.focus_force()
+        self.root.lift() # raise the self.root widget in stacking order
+        self.root.attributes('-topmost', True) # sets the value of '-topmost' flag (specific to platform) to True.
+        self.root.after_idle(self.root.attributes, '-topmost', False) # call self.root.attributes with the args ('-topmost', False) if the Tcl main loop has no event to process
+        self.root.focus_force() # Direct input focus to this widget even if the application doesn't have the focus. Should be used with caution
         
         self.selected_files = []
-        self.num_cols = tk.IntVar(value=2)
-        self.sync_directories = tk.BooleanVar(value=False)
+        self.num_cols = tk.IntVar(value=2) # construct an integer variable
+        self.sync_directories = tk.BooleanVar(value=False) # construct a boolean variable
         
         self._create_widgets()
         
     def _create_widgets(self):
         """Create the GUI widgets."""
         # Main frame
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        main_frame = ttk.Frame(self.root, padding="10") # construct a ttk frame with self.root widget as parent
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S)) # position the main_frame widget in its parent (self.root) in a grid. row and column indicate the indices of the grid cell to put main_frame in. Sticky indicate which boundaries should main_frame stick to if its smaller than the cell
+        self.root.columnconfigure(0, weight=1) # configure the 0-indexed column of self.root by setting its weight (how much does additional space propagate to this column) to 1
+        # my understanding of weight=1 in columnconfigure and rowconfigure is that it lets that cell of the grid take as much space as other things allow.
+        self.root.rowconfigure(0, weight=1) # configure the 0-indexed row of self.root by setting its weight (how much does additional space propagate to this row) to 1
         
         # Title
-        title = ttk.Label(main_frame, text="Image Grid Comparator", 
+        title = ttk.Label(main_frame, text="Image Grid Comparator", # construct a ttk label with main_frame widget as parent
                          font=('TkDefaultFont', 16, 'bold'))
-        title.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        title.grid(row=0, column=0, columnspan=3, pady=(0, 20)) # position the title widget in its parent (self.root) in a grid. columnspan indicates how many columns this widget will span. pady indicates the padding in y direction
         
         # File selection section
-        file_frame = ttk.LabelFrame(main_frame, text="Selected Files", padding="10")
+        file_frame = ttk.LabelFrame(main_frame, text="Selected Files", padding="10") # Labelframe widget is a container used to group other widgets together.
         file_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
-        main_frame.rowconfigure(1, weight=1)
+        main_frame.rowconfigure(1, weight=1) # configure the 1-indexed row of main_frame by setting its weight (how much does additional space propagate to this row) to 1
         
         # Listbox with scrollbar
-        scrollbar = ttk.Scrollbar(file_frame, orient=tk.VERTICAL)
-        self.file_listbox = tk.Listbox(file_frame, yscrollcommand=scrollbar.set, 
+        scrollbar = ttk.Scrollbar(file_frame, orient=tk.VERTICAL) # Construct a Ttk Scrollbar with file_frame as parent
+        self.file_listbox = tk.Listbox(file_frame, yscrollcommand=scrollbar.set, # Construct a Listbox widget with file_frame as parent
                                         height=15, width=80)
-        scrollbar.config(command=self.file_listbox.yview)
+        scrollbar.config(command=self.file_listbox.yview) # Configure the scrollbar to have command argument set to vertical position of file_listbox. yview yields the vertical position of file_listbox. 
         
         self.file_listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
@@ -227,7 +229,7 @@ class ConfigDialog:
                   command=self._move_down).grid(row=0, column=4, padx=5)
         
         # Layout configuration
-        layout_frame = ttk.LabelFrame(main_frame, text="Layout Configuration", padding="10")
+        layout_frame = ttk.LabelFrame(main_frame, text="Layout Configuration", padding="10") # Labelframe widget is a container used to group other widgets together.
         layout_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         
         ttk.Label(layout_frame, text="Number of Columns:").grid(row=0, column=0, padx=(0, 10))
@@ -241,7 +243,7 @@ class ConfigDialog:
         self._update_preview()
         
         # Bind spinbox change
-        self.num_cols.trace('w', lambda *args: self._update_preview())
+        self.num_cols.trace('w', lambda *args: self._update_preview()) # Defines a trace callback for the variable. 'w' is mode. This means that whenever self.num_cols is written, self._update_preview() is called. args doesn't play a role here.
         
         # Directory synchronization section
         sync_frame = ttk.LabelFrame(main_frame, text="Directory Synchronization", padding="10")
@@ -286,9 +288,9 @@ class ConfigDialog:
         
         # Status bar
         self.status_label = ttk.Label(main_frame, text="Ready. Add files to begin.", 
-                                     relief=tk.SUNKEN, anchor=tk.W)
+                                     relief=tk.SUNKEN, anchor=tk.W) # relief=tk.SUNKEN makes the status bar appear in a sunked-like fashion
         self.status_label.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
-    
+
     def _add_files(self):
         """Open file dialog to add image files."""
         filetypes = [
@@ -310,7 +312,7 @@ class ConfigDialog:
                     self.selected_files.append(file)
                     # Show just the filename, but store full path
                     display_name = Path(file).name
-                    self.file_listbox.insert(tk.END, f"{len(self.selected_files)}. {display_name}")
+                    self.file_listbox.insert(tk.END, f"{len(self.selected_files)}. {display_name}") # .insert inserts elements at the specified index
             
             self._update_status(f"Added {len(files)} file(s)")
             self._update_preview()
@@ -387,7 +389,7 @@ class ConfigDialog:
             return
         
         num_files = len(self.selected_files)
-        cols = self.num_cols.get()
+        cols = self.num_cols.get() # get returns the value of the variable as an integer
         rows = math.ceil(num_files / cols)
         
         self.preview_label.config(
