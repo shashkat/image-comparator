@@ -115,14 +115,14 @@ class ImageComparator:
             try:
                 img = self._load_image(self.all_files[i][self.indices[i]]) # img is a np.array
                 ax.imshow(img)
-                filename = self.all_files[i][self.indices[i]].name
+                filename = f'{self.all_files[i][self.indices[i]].parent.name}/{self.all_files[i][self.indices[i]].name}'
                 position = f"({self.indices[i] + 1}/{len(self.all_files[i])})"
                 ax.set_title(f"{filename}\n{position}", fontsize=10)
                 ax.axis('off')
             except Exception as e:
                 ax.text(0.5, 0.5, f"Error loading image:\n{str(e)}", 
                        ha='center', va='center', transform=ax.transAxes)
-                filename = self.all_files[i][self.indices[i]].name
+                filename = f'{self.all_files[i][self.indices[i]].parent.name}/{self.all_files[i][self.indices[i]].name}'
                 ax.set_title(f"{filename} (ERROR)", fontsize=10)
                 ax.axis('off')
         
@@ -311,7 +311,7 @@ class ConfigDialog:
                 if file not in self.selected_files:
                     self.selected_files.append(file)
                     # Show just the filename, but store full path
-                    display_name = Path(file).name
+                    display_name = f'{Path(file).parent}/{Path(file).name}'
                     self.file_listbox.insert(tk.END, f"{len(self.selected_files)}. {display_name}") # .insert inserts elements at the specified index
             
             self._update_status(f"Added {len(files)} file(s)")
@@ -379,7 +379,7 @@ class ConfigDialog:
         """Refresh the listbox display with current files."""
         self.file_listbox.delete(0, tk.END)
         for i, file in enumerate(self.selected_files, 1):
-            display_name = Path(file).name
+            display_name = f'{Path(file).parent}/{Path(file).name}'
             self.file_listbox.insert(tk.END, f"{i}. {display_name}")
     
     def _update_preview(self):
@@ -400,7 +400,7 @@ class ConfigDialog:
     def _update_status(self, message):
         """Update the status bar message."""
         self.status_label.config(text=message)
-    
+
     def _get_all_filenames_from_directories(self, directories):
         """Get union of all image filenames across directories."""
         image_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
