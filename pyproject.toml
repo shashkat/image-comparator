@@ -12,6 +12,7 @@ dependencies = [
   "numpy",
   "Pillow",
   "reportlab",
+  "pymupdf",
 ]
 
 [project.scripts]
