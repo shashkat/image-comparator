@@ -7,7 +7,7 @@ name = "image-comparator"
 version = "0.1.1"
 description = "Compare sets of images side by side with keyboard navigation"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 license = "MIT"
 authors = [
   { name = "Shashank Katiyar" }
