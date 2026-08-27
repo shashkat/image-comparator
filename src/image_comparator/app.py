@@ -257,7 +257,7 @@ class ConfigDialog:
         self._update_preview()
         
         # Bind spinbox change
-        self.num_cols.trace('w', lambda *args: self._update_preview()) # Defines a trace callback for the variable. 'w' is mode. This means that whenever self.num_cols is written, self._update_preview() is called. args doesn't play a role here.
+        self.num_cols.trace_add('write', lambda *args: self._update_preview()) # Defines a trace callback for the variable. 'w' is mode. This means that whenever self.num_cols is written, self._update_preview() is called. args doesn't play a role here.
         
         # Directory synchronization section
         sync_frame = ttk.LabelFrame(main_frame, text="Directory Synchronization", padding="10")
