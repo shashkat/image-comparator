@@ -4,6 +4,7 @@ dist
 build
 old
 temp
+notes
 .vscode
 
 # Byte-compiled / optimized / DLL files
