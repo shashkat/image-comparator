@@ -53,5 +53,5 @@ Compare sets of images side by side with keyboard navigation.
 			ditto -c -k --sequesterRsrc --keepParent /path/to/image-comparator/dist/ImageComparator.app /path/to/image-comparator/dist/ImageComparator.zip
 
 			# this requires having a paid apple developer progam id. Without this, the end user will have to go to settings and allow MacOS to open the file
-			# xcrun notarytool submit /path/to/image-comparator/dist/ImageComparator.zip --apple-id "apple_email" --team-id "developer_team_id" --wait
+			# xcrun notarytool submit /path/to/image-comparator/dist/ImageComparator.zip --apple-id "apple_email" --team-id "developer_team_id" --wait # find password at appleid.apple.com
 			```
