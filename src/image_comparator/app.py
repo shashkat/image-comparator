@@ -184,7 +184,7 @@ class ConfigDialog:
     def __init__(self):
         self.root = tk.Tk() # self.root is toplevel widget on a certain screen
         self.root.title("Image Comparator Configuration")
-        self.root.geometry("900x700")
+        self.root.geometry("800x700")
         
         # Force window to appear on top and gain focus
         self.root.lift() # raise the self.root widget in stacking order
@@ -209,7 +209,7 @@ class ConfigDialog:
         self.root.rowconfigure(0, weight=1) # configure the 0-indexed row of self.root by setting its weight (how much does additional space propagate to this row) to 1
         
         # Title
-        title = ttk.Label(main_frame, text="Image Grid Comparator", # construct a ttk label with main_frame widget as parent
+        title = ttk.Label(main_frame, text="Image Comparator", # construct a ttk label with main_frame widget as parent
                          font=('TkDefaultFont', 16, 'bold'))
         title.grid(row=0, column=0, columnspan=3, pady=(0, 20)) # position the title widget in its parent (self.root) in a grid. columnspan indicates how many columns this widget will span. pady indicates the padding in y direction
         
