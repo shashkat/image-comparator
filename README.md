@@ -19,7 +19,7 @@ Compare sets of images side by side with keyboard navigation.
 
 - Install image-comparator using pipx:
 	```sh
-	pipx install image-comparator --fetch-python=missing
+	pipx install image-comparator --python 3.12 --fetch-python=missing
 	```
 
 - Now you can simply use the tool by running:
