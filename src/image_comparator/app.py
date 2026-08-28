@@ -28,7 +28,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
 class ImageComparator:
-    def __init__(self, image_paths, num_cols=2):
+    def __init__(self, image_paths, num_cols=2, dpi_for_pdf=96):
         """
         Initialize the image comparator with multiple images.
         
@@ -37,6 +37,7 @@ class ImageComparator:
             num_cols: Number of columns in the grid layout
         """
         self.num_images = len(image_paths)
+        self.dpi_for_pdf = dpi_for_pdf
         self.num_cols = num_cols
         self.num_rows = math.ceil(self.num_images / self.num_cols)
         
@@ -106,7 +107,7 @@ class ImageComparator:
 
             # Render the first PDF page at higher resolution.
             page = doc[0]
-            pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False)
+            pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False, dpi=self.dpi_for_pdf)
 
             # Convert the rendered page to an image array for matplotlib.
             img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
@@ -192,6 +193,7 @@ class ConfigDialog:
         self.root.focus_force() # Direct input focus to this widget even if the application doesn't have the focus. Should be used with caution
         
         self.selected_files = []
+        self.dpi_for_pdf = tk.IntVar(value=200) # construct an integer variable
         self.num_cols = tk.IntVar(value=2) # construct an integer variable
         self.sync_directories = tk.BooleanVar(value=False) # construct a boolean variable
         
@@ -245,15 +247,29 @@ class ConfigDialog:
         # Layout configuration
         layout_frame = ttk.LabelFrame(main_frame, text="Layout Configuration", padding="10") # Labelframe widget is a container used to group other widgets together.
         layout_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
+
+        ttk.Label(layout_frame, text="PDF rendering DPI (higher causes clearer plots but slower):").grid(
+            row=0, column=0, padx=(0, 10), pady=(10, 0), sticky=tk.W
+        )
+
+        self.dpi_spinbox = ttk.Spinbox(
+            layout_frame,
+            from_=50,
+            to=1200,
+            increment=50,
+            textvariable=self.dpi_for_pdf,
+            width=10,
+        )
+        self.dpi_spinbox.grid(row=0, column=1, pady=(10, 0), sticky=(tk.W, tk.E))
         
-        ttk.Label(layout_frame, text="Number of Columns:").grid(row=0, column=0, padx=(0, 10))
+        ttk.Label(layout_frame, text="Number of columns in plot grid:").grid(row=1, column=0, padx=(0, 10), sticky=(tk.W))
         cols_spinbox = ttk.Spinbox(layout_frame, from_=1, to=10, 
                                    textvariable=self.num_cols, width=10)
-        cols_spinbox.grid(row=0, column=1)
-        
+        cols_spinbox.grid(row=1, column=1, sticky=(tk.W, tk.E))
+
         # Preview label
         self.preview_label = ttk.Label(layout_frame, text="")
-        self.preview_label.grid(row=1, column=0, columnspan=2, pady=(10, 0))
+        self.preview_label.grid(row=2, column=0, columnspan=2, pady=(10, 0))
         self._update_preview()
         
         # Bind spinbox change
@@ -570,12 +586,33 @@ class ConfigDialog:
         if not self.selected_files:
             messagebox.showerror("No Files", "Please add at least one image file.")
             return
-        
+
         num_cols = self.num_cols.get()
         if num_cols < 1:
-            messagebox.showerror("Invalid Columns", "Number of columns must be at least 1.")
+            messagebox.showerror(
+                "Invalid Columns",
+                "Number of columns must be at least 1."
+            )
             return
-        
+
+        try:
+            dpi_for_pdf = self.dpi_for_pdf.get()
+        except tk.TclError:
+            messagebox.showerror(
+                "Invalid PDF DPI",
+                "PDF rendering DPI must be a whole number, for example 150, 200, or 300."
+            )
+            self.dpi_entry.focus_set()
+            return
+
+        if dpi_for_pdf < 1:
+            messagebox.showerror(
+                "Invalid PDF DPI",
+                "PDF rendering DPI must be at least 1."
+            )
+            self.dpi_entry.focus_set()
+            return
+
         # Validate that all files exist
         for file in self.selected_files:
             if not os.path.exists(file):
@@ -599,7 +636,7 @@ class ConfigDialog:
         
         # Create and show the comparator
         try:
-            comparator = ImageComparator(self.selected_files, num_cols)
+            comparator = ImageComparator(self.selected_files, num_cols, dpi_for_pdf)
             comparator.show()
         except Exception as e:
             messagebox.showerror("Error", f"Error starting comparator:\n{str(e)}")

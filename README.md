@@ -18,6 +18,11 @@ Compare sets of images side by side with keyboard navigation.
 		```
 
 - Install image-comparator using pipx:
+	- Try this (this will try to use an already existing python installation):
+	```sh
+	pipx install image-comparator
+	```
+	- If above command doesn't work, try this (this will install a standalone python installation automatically, hence may take a few minutes to complete):
 	```sh
 	pipx install image-comparator --python 3.12 --fetch-python=missing
 	```
