@@ -1,4 +1,4 @@
-# image-comparator  <img src="icons/256x256.ico" align="right" width="150"/>
+# image-comparator
 Compare sets of images side by side with keyboard navigation.
 
 ## About
@@ -57,15 +57,19 @@ Sometimes you may not have plots corresponding to all the samples in each direct
 		```
 
 - Install image-comparator using pipx:
-	- Try this (this will try to use an already existing python installation):
+	- The supported python versions to build the tool are 3.10, 3.11, 3.12, 3.13. If you already have any of them available in your env, specify them as such:
+		```sh
+		pipx install image-comparator --python 3.12 # change version according to what is available in your env 
+		```
+	- Else, just use this command, which will install a standalone python installation automatically, hence may take a few minutes to complete
+		```sh
+		pipx install image-comparator --python 3.12 --fetch-python=missing
+		```
+- To ensure that the .local/bin path is in your PATH env variable, run:
 	```sh
-	pipx install image-comparator
+	pipx ensurepath
 	```
-	- If above command doesn't work, try this (this will install a standalone python installation automatically, hence may take a few minutes to complete):
-	```sh
-	pipx install image-comparator --python 3.12 --fetch-python=missing
-	```
-
+- Restart your terminal for the changes to take effect.
 - Now you can simply use the tool by running:
 	```sh
 	image-comparator
