@@ -27,6 +27,20 @@ import math
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
+IMAGE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
+
+
+def get_image_files(directory):
+    """Get all image files in directory, sorted alphabetically."""
+    files = []
+    dir_path = Path(directory).resolve()
+    if dir_path.is_dir():
+        for file in sorted(dir_path.iterdir()):
+            if file.is_file() and file.suffix.lower() in IMAGE_EXTENSIONS:
+                files.append(file.resolve())
+    return files
+
+
 class ImageComparator:
     def __init__(self, image_paths, num_cols=2, dpi_for_pdf=96):
         """
@@ -86,14 +100,7 @@ class ImageComparator:
         
     def _get_image_files(self, directory):
         """Get all image files in directory, sorted alphabetically."""
-        image_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
-        files = []
-        
-        for file in sorted(directory.iterdir()): # directory.iterdir() lists all the files in a given directory
-            if file.is_file() and file.suffix.lower() in image_extensions:
-                files.append(file)
-        
-        return files
+        return get_image_files(directory)
     
     def _load_image(self, filepath):
         """Load an image file (handles PDFs and regular images). Returns np.array()"""
@@ -141,6 +148,15 @@ class ImageComparator:
                 ax.set_title(f"{filename} (ERROR)", fontsize=10)
                 ax.axis('off')
         
+        # Update window title with current comparator index if available
+        if hasattr(self.fig.canvas, 'manager') and self.fig.canvas.manager:
+            try:
+                curr_idx = 1 + min(self.indices)
+                max_idx = curr_idx + min(len(self.all_files[j]) - 1 - self.indices[j] for j in range(self.num_images))
+                self.fig.canvas.manager.set_window_title(f"Image Comparator (Index {curr_idx}/{max_idx})")
+            except Exception:
+                pass
+
         # self.fig.tight_layout()
         self.fig.canvas.draw()
     
@@ -169,7 +185,9 @@ class ImageComparator:
     
     def show(self):
         """Display the viewer window."""
-        print(f"\nImage Comparator - Displaying {self.num_images} images in a {self.num_rows}x{self.num_cols} grid")
+        curr_idx = 1 + min(self.indices)
+        max_idx = curr_idx + min(len(self.all_files[j]) - 1 - self.indices[j] for j in range(self.num_images))
+        print(f"\nImage Comparator - Displaying {self.num_images} images in a {self.num_rows}x{self.num_cols} grid (Index {curr_idx}/{max_idx})")
         print("Controls:")
         print("  ↑ (Up Arrow)   : Previous set")
         print("  ↓ (Down Arrow) : Next set")
@@ -184,7 +202,7 @@ class ConfigDialog:
     def __init__(self):
         self.root = tk.Tk() # self.root is toplevel widget on a certain screen
         self.root.title("Image Comparator Configuration")
-        self.root.geometry("800x700")
+        self.root.geometry("800x760")
         
         # Force window to appear on top and gain focus
         self.root.lift() # raise the self.root widget in stacking order
@@ -197,7 +215,15 @@ class ConfigDialog:
         self.num_cols = tk.IntVar(value=2) # construct an integer variable
         self.sync_directories = tk.BooleanVar(value=False) # construct a boolean variable
         
+        self.starting_index_var = tk.StringVar(value="")
+        self.default_starting_index = None
+        self.min_valid_index = None
+        self.max_valid_index = None
+        self.cached_dir_files = []
+        self.cached_selected_indices = []
+
         self._create_widgets()
+        self._update_starting_index()
         
     def _create_widgets(self):
         """Create the GUI widgets."""
@@ -244,9 +270,56 @@ class ConfigDialog:
         ttk.Button(button_frame, text="Move Down", 
                   command=self._move_down).grid(row=0, column=4, padx=5)
         
+        # Starting index section
+        index_frame = ttk.LabelFrame(main_frame, text="Starting Index", padding="10")
+        index_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
+
+        ttk.Label(index_frame, text="Starting-index-value according to chosen plots:").grid(
+            row=0, column=0, padx=(0, 10), pady=(0, 5), sticky=tk.W
+        )
+        self.chosen_index_label = ttk.Label(index_frame, text="N/A", font=('TkDefaultFont', 10, 'bold'))
+        self.chosen_index_label.grid(row=0, column=1, padx=(0, 15), pady=(0, 5), sticky=tk.W)
+
+        self.valid_range_label = ttk.Label(index_frame, text="(Valid range: N/A)", foreground='gray')
+        self.valid_range_label.grid(row=0, column=2, pady=(0, 5), sticky=tk.W)
+
+        ttk.Label(index_frame, text="Comparator starting index:").grid(
+            row=1, column=0, padx=(0, 10), pady=(5, 5), sticky=tk.W
+        )
+
+        index_controls_frame = ttk.Frame(index_frame)
+        index_controls_frame.grid(row=1, column=1, columnspan=2, pady=(5, 5), sticky=tk.W)
+
+        self.starting_index_spinbox = ttk.Spinbox(
+            index_controls_frame,
+            from_=1,
+            to=1,
+            textvariable=self.starting_index_var,
+            width=8,
+            state='disabled'
+        )
+        self.starting_index_spinbox.grid(row=0, column=0, padx=(0, 10), sticky=tk.W)
+
+        self.reset_index_btn = ttk.Button(
+            index_controls_frame,
+            text="Reset to Chosen Plots",
+            command=self._reset_starting_index,
+            state='disabled'
+        )
+        self.reset_index_btn.grid(row=0, column=1, sticky=tk.W)
+
+        self.index_status_label = ttk.Label(
+            index_frame,
+            text="Add files to calculate starting index.",
+            foreground='gray'
+        )
+        self.index_status_label.grid(row=2, column=0, columnspan=3, pady=(5, 0), sticky=tk.W)
+
+        self.starting_index_var.trace_add('write', self._on_starting_index_change)
+
         # Layout configuration
         layout_frame = ttk.LabelFrame(main_frame, text="Layout Configuration", padding="10") # Labelframe widget is a container used to group other widgets together.
-        layout_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
+        layout_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
 
         ttk.Label(layout_frame, text="PDF rendering DPI (higher causes clearer plots but slower):").grid(
             row=0, column=0, padx=(0, 10), pady=(10, 0), sticky=tk.W
@@ -263,9 +336,9 @@ class ConfigDialog:
         self.dpi_spinbox.grid(row=0, column=1, pady=(10, 0), sticky=(tk.W, tk.E))
         
         ttk.Label(layout_frame, text="Number of columns in plot grid:").grid(row=1, column=0, padx=(0, 10), sticky=(tk.W))
-        cols_spinbox = ttk.Spinbox(layout_frame, from_=1, to=10, 
-                                   textvariable=self.num_cols, width=10)
-        cols_spinbox.grid(row=1, column=1, sticky=(tk.W, tk.E))
+        self.cols_spinbox = ttk.Spinbox(layout_frame, from_=1, to=10, 
+                                        textvariable=self.num_cols, width=10)
+        self.cols_spinbox.grid(row=1, column=1, sticky=(tk.W, tk.E))
 
         # Preview label
         self.preview_label = ttk.Label(layout_frame, text="")
@@ -277,7 +350,7 @@ class ConfigDialog:
         
         # Directory synchronization section
         sync_frame = ttk.LabelFrame(main_frame, text="Directory Synchronization", padding="10")
-        sync_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
+        sync_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Checkbox
         sync_checkbox = ttk.Checkbutton(
@@ -308,7 +381,7 @@ class ConfigDialog:
         
         # Action buttons
         action_frame = ttk.Frame(main_frame)
-        action_frame.grid(row=4, column=0, columnspan=3, pady=(10, 0))
+        action_frame.grid(row=5, column=0, columnspan=3, pady=(10, 0))
         
         ttk.Button(action_frame, text="Start Comparator", 
                   command=self._start_comparator, 
@@ -319,7 +392,7 @@ class ConfigDialog:
         # Status bar
         self.status_label = ttk.Label(main_frame, text="Ready. Add files to begin.", 
                                      relief=tk.SUNKEN, anchor=tk.W) # relief=tk.SUNKEN makes the status bar appear in a sunked-like fashion
-        self.status_label.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
+        self.status_label.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
 
     def _add_files(self):
         """Open file dialog to add image files."""
@@ -346,6 +419,7 @@ class ConfigDialog:
             
             self._update_status(f"Added {len(files)} file(s)")
             self._update_preview()
+            self._update_starting_index(reset_value=True)
     
     def _remove_selected(self):
         """Remove selected files from the list."""
@@ -363,6 +437,7 @@ class ConfigDialog:
         self._refresh_listbox()
         self._update_status("Removed selected file(s)")
         self._update_preview()
+        self._update_starting_index(reset_value=True)
     
     def _clear_all(self):
         """Clear all selected files."""
@@ -372,6 +447,7 @@ class ConfigDialog:
             self.file_listbox.delete(0, tk.END)
             self._update_status("Cleared all files")
             self._update_preview()
+            self._update_starting_index(reset_value=True)
     
     def _move_up(self):
         """Move selected file up in the list."""
@@ -388,6 +464,7 @@ class ConfigDialog:
         self.file_listbox.selection_clear(0, tk.END)
         self.file_listbox.selection_set(index-1)
         self.file_listbox.see(index-1)
+        self._update_starting_index(reset_value=False)
     
     def _move_down(self):
         """Move selected file down in the list."""
@@ -404,6 +481,7 @@ class ConfigDialog:
         self.file_listbox.selection_clear(0, tk.END)
         self.file_listbox.selection_set(index+1)
         self.file_listbox.see(index+1)
+        self._update_starting_index(reset_value=False)
     
     def _refresh_listbox(self):
         """Refresh the listbox display with current files."""
@@ -433,15 +511,10 @@ class ConfigDialog:
 
     def _get_all_filenames_from_directories(self, directories):
         """Get union of all image filenames across directories."""
-        image_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
         all_filenames = set()
-        
         for directory in directories:
-            dir_path = Path(directory)
-            for file in dir_path.iterdir():
-                if file.is_file() and file.suffix.lower() in image_extensions:
-                    all_filenames.add(file.name)
-        
+            for file in get_image_files(directory):
+                all_filenames.add(file.name)
         return sorted(all_filenames)
     
     def _create_placeholder_pdf(self, filepath, filename):
@@ -535,9 +608,7 @@ class ConfigDialog:
             # For each directory, check which files are missing
             for directory in directories:
                 dir_path = Path(directory)
-                existing_files = {f.name for f in dir_path.iterdir() 
-                                if f.is_file() and f.suffix.lower() in 
-                                {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}}
+                existing_files = {f.name for f in get_image_files(dir_path)}
                 
                 missing_files = set(all_filenames) - existing_files
                 
@@ -576,23 +647,234 @@ class ConfigDialog:
                                              foreground='green')
             
             self._update_status(f"Synchronized {len(directories)} directories")
+            self._update_starting_index(reset_value=False)
             
         except Exception as e:
             messagebox.showerror("Sync Error", f"Error during synchronization:\n{str(e)}")
             self.sync_status_label.config(text="✗ Sync failed", foreground='red')
     
+    def _calculate_index_range(self):
+        """
+        Calculate the valid starting index range and default index based on selected files.
+        Returns a dict with:
+            valid: bool
+            min_index: int or None
+            max_index: int or None
+            default_index: int or None
+            dir_files: list of list of Path
+            selected_indices: list of int
+            error: str or None
+        """
+        if not self.selected_files:
+            return {
+                'valid': False,
+                'min_index': None,
+                'max_index': None,
+                'default_index': None,
+                'dir_files': [],
+                'selected_indices': [],
+                'error': None
+            }
+
+        dir_files = []
+        selected_indices = []
+
+        for file_str in self.selected_files:
+            file_path = Path(file_str).resolve()
+            if not file_path.exists():
+                return {
+                    'valid': False,
+                    'min_index': None,
+                    'max_index': None,
+                    'default_index': None,
+                    'dir_files': [],
+                    'selected_indices': [],
+                    'error': f"File does not exist: {file_path.name}"
+                }
+
+            directory = file_path.parent
+            files = get_image_files(directory)
+            try:
+                idx = files.index(file_path)
+            except ValueError:
+                return {
+                    'valid': False,
+                    'min_index': None,
+                    'max_index': None,
+                    'default_index': None,
+                    'dir_files': [],
+                    'selected_indices': [],
+                    'error': f"File not found among valid image files in {directory.name}: {file_path.name}"
+                }
+
+            dir_files.append(files)
+            selected_indices.append(idx)
+
+        max_backward = min(selected_indices)
+        max_forward = min(len(files) - 1 - idx for files, idx in zip(dir_files, selected_indices))
+        min_index = 1
+        max_index = 1 + max_backward + max_forward
+        default_index = 1 + max_backward
+
+        return {
+            'valid': True,
+            'min_index': min_index,
+            'max_index': max_index,
+            'default_index': default_index,
+            'dir_files': dir_files,
+            'selected_indices': selected_indices,
+            'error': None
+        }
+
+    def _get_preview_filenames_at_index(self, index):
+        """Return a compact preview string of filenames at the given index."""
+        if not self.cached_dir_files or not self.cached_selected_indices or self.default_starting_index is None:
+            return ""
+
+        offset = index - self.default_starting_index
+        names = []
+        for i, idx in enumerate(self.cached_selected_indices):
+            target_idx = idx + offset
+            if 0 <= target_idx < len(self.cached_dir_files[i]):
+                names.append(self.cached_dir_files[i][target_idx].name)
+            else:
+                names.append("?")
+
+        if len(names) <= 3:
+            return ", ".join(names)
+        else:
+            return ", ".join(names[:3]) + f", ... ({len(names)} files)"
+
+    def _update_starting_index(self, reset_value=True):
+        """Update the starting index display and bounds based on current selected files."""
+        result = self._calculate_index_range()
+
+        if not result['valid']:
+            self.min_valid_index = None
+            self.max_valid_index = None
+            self.default_starting_index = None
+            self.cached_dir_files = []
+            self.cached_selected_indices = []
+
+            self.chosen_index_label.config(text="N/A")
+            self.valid_range_label.config(text="(Valid range: N/A)")
+            self.starting_index_spinbox.config(state='disabled', from_=1, to=1)
+            self.reset_index_btn.config(state='disabled')
+
+            error_msg = result['error']
+            if error_msg:
+                self.index_status_label.config(text=error_msg, foreground='red')
+            else:
+                self.index_status_label.config(text="Add files to calculate starting index.", foreground='gray')
+
+            self.starting_index_var.set("")
+            return
+
+        self.min_valid_index = result['min_index']
+        self.max_valid_index = result['max_index']
+        self.default_starting_index = result['default_index']
+        self.cached_dir_files = result['dir_files']
+        self.cached_selected_indices = result['selected_indices']
+
+        # Display current starting-index-value according to chosen plots and their directories
+        self.chosen_index_label.config(text=str(self.default_starting_index))
+        total_valid = self.max_valid_index - self.min_valid_index + 1
+        self.valid_range_label.config(
+            text=f"(Valid range: {self.min_valid_index} to {self.max_valid_index}, total: {total_valid})"
+        )
+
+        # Configure spinbox bounds and enable
+        self.starting_index_spinbox.config(
+            state='normal',
+            from_=self.min_valid_index,
+            to=self.max_valid_index
+        )
+        self.reset_index_btn.config(state='normal')
+
+        should_reset = reset_value
+        if not should_reset:
+            try:
+                curr_val = int(self.starting_index_var.get().strip())
+                if not (self.min_valid_index <= curr_val <= self.max_valid_index):
+                    should_reset = True
+            except (ValueError, tk.TclError):
+                should_reset = True
+
+        if should_reset:
+            self.starting_index_var.set(str(self.default_starting_index))
+        else:
+            self._on_starting_index_change()
+
+    def _reset_starting_index(self):
+        """Reset the comparator starting index to the value corresponding to chosen plots."""
+        if self.default_starting_index is not None:
+            self.starting_index_var.set(str(self.default_starting_index))
+
+    def _on_starting_index_change(self, *args):
+        """Handle changes to the comparator starting index entry/spinbox."""
+        if not self.selected_files or self.min_valid_index is None or self.max_valid_index is None:
+            return
+
+        val_str = self.starting_index_var.get().strip()
+        if not val_str:
+            self.index_status_label.config(
+                text=f"Please enter an index between {self.min_valid_index} and {self.max_valid_index}.",
+                foreground='red'
+            )
+            return
+
+        try:
+            val = int(val_str)
+        except ValueError:
+            self.index_status_label.config(
+                text=f"Invalid number. Please enter an integer between {self.min_valid_index} and {self.max_valid_index}.",
+                foreground='red'
+            )
+            return
+
+        if self.min_valid_index <= val <= self.max_valid_index:
+            offset = val - self.default_starting_index
+            preview_str = self._get_preview_filenames_at_index(val)
+            if offset == 0:
+                self.index_status_label.config(
+                    text=f"Plots at index {val} (corresponds to chosen plots): {preview_str}",
+                    foreground='darkgreen'
+                )
+            else:
+                sign = f"+{offset}" if offset > 0 else f"{offset}"
+                step_word = "step" if abs(offset) == 1 else "steps"
+                self.index_status_label.config(
+                    text=f"Plots at index {val} ({sign} {step_word} from chosen plots): {preview_str}",
+                    foreground='#004488'
+                )
+        else:
+            self.index_status_label.config(
+                text=f"Out of range! Must be between {self.min_valid_index} and {self.max_valid_index}.",
+                foreground='red'
+            )
+
     def _start_comparator(self):
         """Validate and start the image comparator."""
         if not self.selected_files:
             messagebox.showerror("No Files", "Please add at least one image file.")
             return
 
-        num_cols = self.num_cols.get()
+        try:
+            num_cols = self.num_cols.get()
+        except tk.TclError:
+            messagebox.showerror(
+                "Invalid Columns",
+                "Number of columns must be a positive whole number."
+            )
+            self.cols_spinbox.focus_set()
+            return
+
         if num_cols < 1:
             messagebox.showerror(
                 "Invalid Columns",
                 "Number of columns must be at least 1."
             )
+            self.cols_spinbox.focus_set()
             return
 
         try:
@@ -602,7 +884,7 @@ class ConfigDialog:
                 "Invalid PDF DPI",
                 "PDF rendering DPI must be a whole number, for example 150, 200, or 300."
             )
-            self.dpi_entry.focus_set()
+            self.dpi_spinbox.focus_set()
             return
 
         if dpi_for_pdf < 1:
@@ -610,7 +892,7 @@ class ConfigDialog:
                 "Invalid PDF DPI",
                 "PDF rendering DPI must be at least 1."
             )
-            self.dpi_entry.focus_set()
+            self.dpi_spinbox.focus_set()
             return
 
         # Validate that all files exist
@@ -630,13 +912,48 @@ class ConfigDialog:
                 )
                 if response:
                     self._sync_directories()
-        
+
+        # Recalculate index range to ensure up-to-date directory information
+        result = self._calculate_index_range()
+        if not result['valid']:
+            messagebox.showerror("Index Error", result['error'] or "Error calculating index range.")
+            return
+
+        min_idx = result['min_index']
+        max_idx = result['max_index']
+        default_idx = result['default_index']
+
+        try:
+            start_idx = int(self.starting_index_var.get().strip())
+        except (ValueError, tk.TclError):
+            messagebox.showerror(
+                "Invalid Starting Index",
+                f"Starting index must be an integer between {min_idx} and {max_idx}."
+            )
+            self.starting_index_spinbox.focus_set()
+            return
+
+        if start_idx < min_idx or start_idx > max_idx:
+            messagebox.showerror(
+                "Invalid Starting Index",
+                f"Starting index must be between {min_idx} and {max_idx}."
+            )
+            self.starting_index_spinbox.focus_set()
+            return
+
+        # Compute first plots to show based on user-specified starting-index-value
+        offset = start_idx - default_idx
+        start_files = []
+        for i in range(len(self.selected_files)):
+            target_idx = result['selected_indices'][i] + offset
+            start_files.append(str(result['dir_files'][i][target_idx]))
+
         # Close the config dialog
         self.root.withdraw()
         
         # Create and show the comparator
         try:
-            comparator = ImageComparator(self.selected_files, num_cols, dpi_for_pdf)
+            comparator = ImageComparator(start_files, num_cols, dpi_for_pdf)
             comparator.show()
         except Exception as e:
             messagebox.showerror("Error", f"Error starting comparator:\n{str(e)}")
