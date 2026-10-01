@@ -197,6 +197,16 @@ class ImageComparator:
             else:
                 print("Already at the last images")
                 
+        elif event.key == 'd':
+            # Back to the default mode (resizing panels by dragging) from zoom or pan mode.
+            # Zoom ('o') and pan ('p') are toggled by matplotlib's own toolbar shortcuts.
+            toolbar = getattr(self.fig.canvas, 'toolbar', None)
+            if toolbar is not None:
+                if toolbar.mode == 'zoom rect':
+                    toolbar.zoom()
+                elif toolbar.mode == 'pan/zoom':
+                    toolbar.pan()
+                
         elif event.key == 'e':
             # Make all panels equally sized again
             self.height_ratios = [1.0] * self.num_rows
@@ -294,7 +304,11 @@ class ImageComparator:
         print("Controls:")
         print("  ↑ (Up Arrow)   : Previous set")
         print("  ↓ (Down Arrow) : Next set")
-        print("  Drag gap       : Resize neighbouring panels (gaps between rows or between panels in a row)")
+        print("  D              : Default mode (drag gaps between panels to resize them)")
+        print("  O              : Toggle zoom mode (drag a rectangle to zoom in)")
+        print("  P              : Toggle pan mode (drag to pan, right-drag to zoom)")
+        print("  H              : Reset zoom/pan of all panels")
+        print("  Drag gap       : Resize neighbouring panels (in default mode)")
         print("  E              : Make all panels equally sized again")
         print("  Q or ESC       : Quit")
         print("\nShowing images...")

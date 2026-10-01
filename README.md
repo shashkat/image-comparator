@@ -138,6 +138,15 @@ Not every plot collection needs the same amount of space — for example, a coll
 
 The panel sizes are kept as you navigate with the arrow keys. Dragging is disabled while the toolbar's zoom or pan mode is active.
 
+### Viewer modes
+
+The viewer has three mouse modes, which can be switched with the keyboard instead of the toolbar buttons:
+
+- **D** — default mode: drag the gaps between panels to resize them
+- **O** — toggle zoom mode: drag a rectangle over a plot to zoom into it
+- **P** — toggle pan mode: drag to pan around a plot (right-drag to zoom)
+- **H** — reset the zoom and pan of all panels
+
 ## Uninstalling
 
 - If want to uninstall, simply run:
