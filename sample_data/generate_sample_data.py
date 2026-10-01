@@ -237,12 +237,66 @@ WITH_GAPS = {
 }
 
 
+def plot_dense_scatter(sample, path):
+    """Vector-heavy: every point is a separate PDF path, so rasterising is slow at any DPI."""
+    p = sample_profile(sample)
+    rng = p["rng"]
+    n = int(rng.integers(60, 221)) * 1000
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(*rng.normal(size=(2, n)), s=2, c=rng.random(n), cmap="Blues", vmin=-0.3, linewidths=0)
+    ax.set_xlabel("Component 1")
+    ax.set_ylabel("Component 2")
+    title(fig, sample, f"Dense scatter ({n // 1000}k points)", p)
+    fig.tight_layout(rect=(0, 0, 1, header_top(fig)))
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def plot_dense_mesh(sample, path):
+    """Vector-heavy: a pcolormesh is stored as one PDF quad per cell."""
+    p = sample_profile(sample)
+    rng = p["rng"]
+    side = int(rng.integers(250, 451))
+    fig, ax = plt.subplots(figsize=(8, 6))
+    mesh = ax.pcolormesh(rng.random((side, side)), cmap="Blues")
+    ax.grid(False)
+    fig.colorbar(mesh, ax=ax, label="Value")
+    title(fig, sample, f"Dense mesh ({side} × {side} cells)", p)
+    fig.tight_layout(rect=(0, 0, 1, header_top(fig)))
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def plot_large_page(sample, path):
+    """Pixel-heavy: a physically large page, so the rendered image gets huge at high DPI."""
+    p = sample_profile(sample)
+    rng = p["rng"]
+    side = int(rng.integers(20, 37))
+    fig, ax = plt.subplots(figsize=(side, side))
+    for i, walk in enumerate(np.cumsum(rng.normal(size=(8, 2000)), axis=1)):
+        ax.plot(walk, color=SERIES[i], lw=2)
+    ax.set_xlabel("Time step")
+    ax.set_ylabel("Signal")
+    title(fig, sample, f"Large page ({side} × {side} in)", p)
+    fig.tight_layout(rect=(0, 0, 1, header_top(fig)))
+    fig.savefig(path)
+    plt.close(fig)
+
+
 # scenario 3: extreme and changing aspect ratios, for zoom / reset-view behaviour
 VARIED_ASPECT = {
     "wide_plots": (plot_coverage_track, ".png"),
     "tall_plots": (plot_gene_dotplot, ".png"),
     "mixed_shape_plots": (plot_mixed_shape, ".pdf"),
     "regular_plots": (plot_qc, ".png"),
+}
+
+# scenario 4: PDFs that are slow to rasterise, for PDF rendering speed (~100 MB, git-ignored)
+HEAVY_PDF = {
+    "dense_scatter_plots": plot_dense_scatter,
+    "dense_mesh_plots": plot_dense_mesh,
+    "large_page_plots": plot_large_page,
+    "regular_plots": plot_umap,
 }
 
 
@@ -275,7 +329,14 @@ def main():
         for sample in SAMPLES:
             plot_fn(sample, aspect_root / dirname / f"{sample}{ext}")
 
-    print(f"Wrote sample plots to {complete_root}, {gaps_root} and {aspect_root}")
+    heavy_root = ROOT / "heavy_pdf"
+    reset(heavy_root)
+    for dirname, plot_fn in HEAVY_PDF.items():
+        (heavy_root / dirname).mkdir()
+        for sample in SAMPLES:
+            plot_fn(sample, heavy_root / dirname / f"{sample}.pdf")
+
+    print(f"Wrote sample plots to {complete_root}, {gaps_root}, {aspect_root} and {heavy_root}")
 
 
 if __name__ == "__main__":
