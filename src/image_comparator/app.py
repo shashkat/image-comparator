@@ -219,7 +219,6 @@ class ConfigDialog:
         self.selected_files = []
         self.dpi_for_pdf = tk.IntVar(value=200) # construct an integer variable
         self.num_cols = tk.IntVar(value=2) # construct an integer variable
-        self.sync_directories = tk.BooleanVar(value=False) # construct a boolean variable
         
         self.starting_index_var = tk.StringVar(value="")
         self.default_starting_index = None
@@ -358,32 +357,24 @@ class ConfigDialog:
         sync_frame = ttk.LabelFrame(main_frame, text="Directory Synchronization", padding="10")
         sync_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        # Checkbox
-        sync_checkbox = ttk.Checkbutton(
-            sync_frame, 
-            text="Synchronize directories (create placeholder files for missing images)",
-            variable=self.sync_directories
-        )
-        sync_checkbox.grid(row=0, column=0, columnspan=2, sticky=tk.W)
-        
         # Explanation label
         explanation = ttk.Label(
             sync_frame,
-            text="When enabled, analyzes all selected file directories and creates placeholder\n"
-                 "files for any missing filenames. This keeps navigation synchronized.",
+            text="Analyzes all selected file directories and creates placeholder files\n"
+                 "for any missing filenames. This keeps navigation synchronized.",
             foreground='gray'
         )
-        explanation.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        explanation.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         
         # Sync button
         ttk.Button(
             sync_frame,
             text="Sync Directories Now",
             command=self._sync_directories
-        ).grid(row=2, column=0, pady=(10, 0), sticky=tk.W)
+        ).grid(row=1, column=0, pady=(10, 0), sticky=tk.W)
         
         self.sync_status_label = ttk.Label(sync_frame, text="", foreground='blue')
-        self.sync_status_label.grid(row=2, column=1, pady=(10, 0), padx=(10, 0), sticky=tk.W)
+        self.sync_status_label.grid(row=1, column=1, pady=(10, 0), padx=(10, 0), sticky=tk.W)
         
         # Action buttons
         action_frame = ttk.Frame(main_frame)
@@ -907,18 +898,6 @@ class ConfigDialog:
                 messagebox.showerror("File Not Found", f"File not found: {file}")
                 return
         
-        # Check if auto-sync is enabled
-        if self.sync_directories.get():
-            directories = list(set(Path(f).parent for f in self.selected_files))
-            if len(directories) > 1:
-                response = messagebox.askyesno(
-                    "Auto-Sync Enabled",
-                    f"Directory synchronization is enabled.\n\n"
-                    f"Do you want to sync {len(directories)} directories before starting the comparator?"
-                )
-                if response:
-                    self._sync_directories()
-
         # Recalculate index range to ensure up-to-date directory information
         result = self._calculate_index_range()
         if not result['valid']:
