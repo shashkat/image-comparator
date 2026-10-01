@@ -40,6 +40,11 @@ In this case, navigating forward will show something like this:
 
 Sometimes you may not have plots corresponding to all the samples in each directory you want to navigate through. In this case, as you scroll through the directories in the visualizer mode, the plots may get out of sync. If you adopt the strategy of naming all the plot files with just the identifier of the datapoint, then we can simply have placeholder files for the missing datapoints in each directory, so that upon scrolling, we dont get out of sync. To do this, after you have selected the initial plots, simply press "Sync Direcories Now" button. This will create placeholder files in the directories of the selected plots for whichever datapoints were missing compared to the union of all the datapoints in the chosen plots' directories. Filenames are compared without their extensions, so `sample_A.png` and `sample_A.pdf` count as the same datapoint, and each placeholder takes the most common extension in its directory.
 
+To see whether the directories are in sync without creating any files, press the "Check Sync Status" button. It reports, for each directory of the selected plots:
+
+- **Missing datapoints** — filenames present in other directories but not in this one. These can be filled with placeholders using "Sync Directories Now".
+- **Duplicate datapoints** — the same filename appearing more than once with different extensions (e.g. `sample_A.png` and `sample_A.pdf`). These shift that directory out of step during navigation and must be resolved manually, as syncing does not remove files.
+
 ## Installation
 
 - Ensure that pipx is installed. Depending on your platform, run one of the following in terminal:

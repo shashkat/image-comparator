@@ -367,17 +367,24 @@ class ConfigDialog:
                  "for any missing filenames. This keeps navigation synchronized.",
             foreground='gray'
         )
-        explanation.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        explanation.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+        
+        # Check sync status button (read-only, creates no files)
+        ttk.Button(
+            sync_frame,
+            text="Check Sync Status",
+            command=self._check_sync_status
+        ).grid(row=1, column=0, pady=(10, 0), padx=(0, 5), sticky=tk.W)
         
         # Sync button
         ttk.Button(
             sync_frame,
             text="Sync Directories Now",
             command=self._sync_directories
-        ).grid(row=1, column=0, pady=(10, 0), sticky=tk.W)
+        ).grid(row=1, column=1, pady=(10, 0), sticky=tk.W)
         
         self.sync_status_label = ttk.Label(sync_frame, text="", foreground='blue')
-        self.sync_status_label.grid(row=1, column=1, pady=(10, 0), padx=(10, 0), sticky=tk.W)
+        self.sync_status_label.grid(row=1, column=2, pady=(10, 0), padx=(10, 0), sticky=tk.W)
         
         # Action buttons
         action_frame = ttk.Frame(main_frame)
@@ -575,6 +582,65 @@ class ConfigDialog:
         draw.text(((800 - (bbox3[2] - bbox3[0])) / 2, 340), text3, fill='gray', font=font_small)
         
         img.save(filepath)
+    
+    def _check_sync_status(self):
+        """Report missing and duplicate filenames (ignoring extensions) without creating any files."""
+        if not self.selected_files:
+            messagebox.showwarning("No Files", "Please add files first before checking sync status.")
+            return
+        
+        # Unique directories of the selected files, in the order they were selected
+        directories = list(dict.fromkeys(Path(f).parent for f in self.selected_files))
+        
+        def preview(names, limit=5):
+            return ", ".join(names[:limit]) + (f", ... ({len(names)} total)" if len(names) > limit else "")
+        
+        try:
+            dir_files = {d: get_image_files(d) for d in directories}
+            all_stems = self._get_all_stems_from_directories(directories)
+            
+            issues = []
+            for directory, files in dir_files.items():
+                stems = [f.stem for f in files]
+                stem_counts = Counter(stems)
+                
+                # i) filenames present in other directories but missing here
+                missing = sorted(set(all_stems) - set(stems))
+                # ii) filenames appearing more than once here (e.g. sample_A.png and sample_A.pdf)
+                duplicates = sorted(stem for stem, count in stem_counts.items() if count > 1)
+                
+                if missing or duplicates:
+                    lines = [f"{directory.name}/  ({len(files)} files)"]
+                    if missing:
+                        lines.append(f"    Missing {len(missing)}: {preview(missing)}")
+                    if duplicates:
+                        dup_names = [f.name for f in files if f.stem in duplicates]
+                        lines.append(f"    Duplicated {len(duplicates)}: {preview(dup_names)}")
+                    issues.append("\n".join(lines))
+        except Exception as e:
+            messagebox.showerror("Sync Status Error", f"Error while checking sync status:\n{str(e)}")
+            return
+        
+        if not issues:
+            messagebox.showinfo(
+                "Sync Status",
+                f"All {len(directories)} directories are in sync.\n\n"
+                f"Each has the same {len(all_stems)} filenames (ignoring extensions), with no duplicates."
+            )
+            self.sync_status_label.config(text="✓ In sync", foreground='green')
+            self._update_status(f"Checked {len(directories)} directories: in sync")
+        else:
+            messagebox.showwarning(
+                "Sync Status",
+                f"{len(issues)} of {len(directories)} directories have issues "
+                f"({len(all_stems)} unique filenames across all directories, ignoring extensions):\n\n"
+                + "\n\n".join(issues) +
+                "\n\nMissing files can be filled with placeholders using \"Sync Directories Now\". "
+                "Duplicates must be resolved manually."
+            )
+            self.sync_status_label.config(text=f"⚠ Out of sync ({len(issues)} directories with issues)",
+                                         foreground='orange')
+            self._update_status(f"Checked {len(directories)} directories: {len(issues)} with issues")
     
     def _sync_directories(self):
         """Synchronize directories by creating placeholder files."""
