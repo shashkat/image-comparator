@@ -7,6 +7,11 @@ temp
 notes
 .vscode
 plans/temp.excalidraw
+# large generated test PDFs (regenerate with sample_data/generate_sample_data.py)
+sample_data/heavy_pdf/
+sample_data/complete/
+sample_data/varied_aspect/
+sample_data/with_gaps/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -226,6 +231,3 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-
-# large generated test PDFs (regenerate with sample_data/generate_sample_data.py)
-sample_data/heavy_pdf/
