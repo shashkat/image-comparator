@@ -157,6 +157,12 @@ class ImageComparator:
             except Exception:
                 pass
 
+        # Reset the toolbar's zoom/pan history so that Home returns to the view of the
+        # currently displayed images, not to the images that were shown when first zooming
+        toolbar = getattr(self.fig.canvas, 'toolbar', None)
+        if toolbar is not None:
+            toolbar.update()
+
         # self.fig.tight_layout()
         self.fig.canvas.draw()
     
