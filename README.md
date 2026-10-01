@@ -101,13 +101,13 @@ The order of selected entries determines the order in which plot collections app
 
 ### 2. Set the rendering DPI (irrelevant if not working with .pdf plots)
 
-Use **PDF rendering DPI** to control the resolution used when rendering PDF plots.
+PDF plots are rendered to fit their panel on screen (at twice the panel's size, so that zooming in and enlarging panels stays sharp). Use **Maximum PDF rendering DPI** to cap the resolution used for this.
 
-- Higher DPI produces sharper plots, especially for text and fine lines.
-- Higher DPI also uses more memory and may make navigation slower.
+- A higher maximum allows sharper zooming into PDF plots, especially into text and fine lines.
+- A lower maximum renders large PDF pages faster and uses less memory.
 - The default value of `200` is usually a good starting point.
 
-Increase the DPI if PDF plots appear blurry; decrease it if opening or navigating large plot collections is slow.
+To keep navigation fast, the PDFs of the next and previous steps are rendered in the background while you view the current one, and recently viewed ones are kept in memory. Very complex PDFs (e.g. scatter plots with hundreds of thousands of points) can still take a moment if you navigate faster than they can be rendered.
 
 ### 3. Choose the grid layout
 

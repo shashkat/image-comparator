@@ -12,7 +12,7 @@ Optional dependencies for enhanced features:
 import sys
 import os
 from pathlib import Path
-from collections import Counter
+from collections import Counter, OrderedDict
 
 # Set matplotlib backend before importing pyplot
 import matplotlib
@@ -30,6 +30,97 @@ from tkinter import filedialog, ttk, messagebox
 from matplotlib.backend_tools import Cursors
 
 IMAGE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
+
+# PDFs are rendered at OVERSAMPLE times their panel's on-screen size (so that zooming in and
+# enlarging panels stays reasonably sharp), but never above the DPI chosen in the dialog
+PDF_OVERSAMPLE = 2
+# Rendering targets are rounded up to this many pixels, so that small panel resizes still
+# hit the cache
+PDF_TARGET_STEP = 64
+# Memory budget for rendered PDF pages kept in the cache
+PDF_CACHE_BYTES = 1024 ** 3
+
+
+def render_pdf_page(path, max_dpi, max_width, max_height):
+    """
+    Render the first page of a PDF at the highest DPI (at most max_dpi) for which the result
+    fits within max_width x max_height pixels. Runs in worker processes, so it must stay a
+    module-level function.
+    """
+    with pymupdf.open(path) as doc:
+        page = doc[0]
+        fit_dpi = 72 * min(max_width / page.rect.width, max_height / page.rect.height)
+        dpi = max(1, int(min(max_dpi, fit_dpi)))
+        pix = page.get_pixmap(alpha=False, dpi=dpi)
+        return np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+
+
+class PdfRenderCache:
+    """
+    Renders PDF pages in worker processes and keeps the results in an LRU cache.
+
+    Worker processes are used rather than threads because pymupdf holds the GIL while
+    rendering, which would freeze the viewer. Pages are keyed by (path, max_dpi, width, height),
+    so a page is re-rendered when it is needed at a different size.
+    """
+
+    def __init__(self, max_dpi):
+        from concurrent.futures import ProcessPoolExecutor
+        self.max_dpi = max_dpi
+        self.pool = ProcessPoolExecutor(max_workers=max(1, min(4, (os.cpu_count() or 2) - 1)))
+        self.cache = OrderedDict()   # key -> image array, least recently used first
+        self.cache_bytes = 0
+        self.pending = {}            # key -> Future
+
+    def key(self, path, width, height):
+        return (str(path), self.max_dpi, width, height)
+
+    def _store(self, key, img):
+        self.cache[key] = img
+        self.cache_bytes += img.nbytes
+        while self.cache_bytes > PDF_CACHE_BYTES and len(self.cache) > 1:
+            _, old = self.cache.popitem(last=False)
+            self.cache_bytes -= old.nbytes
+
+    def request(self, key):
+        """Start rendering key in the background, unless it is cached or already being rendered."""
+        if key not in self.cache and key not in self.pending:
+            self.pending[key] = self.pool.submit(render_pdf_page, *key)
+
+    def get(self, key, in_process=False):
+        """
+        Return the rendered page for key, waiting for it if needed. With in_process, a page
+        that isn't cached or being rendered yet is rendered directly in this process (used
+        for the first display, before the worker processes have started).
+        """
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        future = self.pending.pop(key, None)
+        if future is not None and not future.cancelled():
+            img = future.result()
+        elif in_process:
+            img = render_pdf_page(*key)
+        else:
+            img = self.pool.submit(render_pdf_page, *key).result()
+        self._store(key, img)
+        return img
+
+    def prefetch(self, keys):
+        """Render keys in the background (in the given order), dropping queued renders no longer wanted."""
+        wanted = set(keys)
+        for key, future in list(self.pending.items()):
+            if future.done():
+                del self.pending[key]
+                if not future.cancelled() and future.exception() is None:
+                    self._store(key, future.result())
+            elif key not in wanted and future.cancel():
+                del self.pending[key]
+        for key in keys:
+            self.request(key)
+
+    def shutdown(self):
+        self.pool.shutdown(wait=False, cancel_futures=True)
 
 
 def get_image_files(directory):
@@ -107,6 +198,14 @@ class ImageComparator:
         self.fig.canvas.mpl_connect('motion_notify_event', self._on_motion)
         self.fig.canvas.mpl_connect('button_release_event', self._on_release)
         
+        # PDFs are rendered (and rendered ahead for neighbouring steps) in worker processes
+        self.pdf_cache = PdfRenderCache(self.dpi_for_pdf)
+        self._displayed_once = False
+        self.fig.canvas.mpl_connect('close_event', lambda event: self.pdf_cache.shutdown())
+        
+        # Compute the layout, so that panel sizes are known for rendering the first PDFs
+        self.fig.draw_without_rendering()
+        
         # Display initial images
         self.update_display()
         
@@ -114,40 +213,81 @@ class ImageComparator:
         """Get all image files in directory, sorted alphabetically."""
         return get_image_files(directory)
     
-    def _load_image(self, filepath):
-        """Load an image file (handles PDFs and regular images). Returns np.array()"""
-        filepath = Path(filepath)
-        
-        if filepath.suffix.lower() == '.pdf':
-            # Convert PDF to image (first page only)
-            # images = convert_from_path(str(filepath), first_page=1, last_page=1)
-
-            doc = pymupdf.open(str(filepath))
-
-            # Render the first PDF page at higher resolution.
-            page = doc[0]
-            pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False, dpi=self.dpi_for_pdf)
-
-            # Convert the rendered page to an image array for matplotlib.
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-                pix.height, pix.width, pix.n
-            )
-            doc.close()
-
-            return img
-        else:
-            # Load regular image
-            return mpimg.imread(str(filepath))
+    def _panel_target(self, i):
+        """Pixel size (width, height) to render a PDF at for panel i: its on-screen size, oversampled."""
+        box = self.axes[i].get_position(original=True)
+        step = PDF_TARGET_STEP
+        width = math.ceil(PDF_OVERSAMPLE * box.width * self.fig.bbox.width / step) * step
+        height = math.ceil(PDF_OVERSAMPLE * box.height * self.fig.bbox.height / step) * step
+        return max(width, step), max(height, step)
+    
+    def _pdf_key(self, i, index):
+        """Cache key of the file at position index in panel i's directory, or None if it isn't a PDF."""
+        filepath = self.all_files[i][index]
+        if filepath.suffix.lower() != '.pdf':
+            return None
+        return self.pdf_cache.key(filepath, *self._panel_target(i))
+    
+    def _load_image(self, i):
+        """Load the current image of panel i (first page only for PDFs). Returns np.array()"""
+        key = self._pdf_key(i, self.indices[i])
+        if key is not None:
+            # Rendered in this process for the first display, while the worker processes start
+            return self.pdf_cache.get(key, in_process=not self._displayed_once)
+        # Load regular image
+        return mpimg.imread(str(self.all_files[i][self.indices[i]]))
+    
+    def _prefetch(self):
+        """Render the PDFs of the neighbouring steps in the background: next, previous, then the one after next."""
+        keys = []
+        for offset in (1, -1, 2):
+            for i in range(self.num_images):
+                index = self.indices[i] + offset
+                if 0 <= index < len(self.all_files[i]):
+                    key = self._pdf_key(i, index)
+                    if key is not None:
+                        keys.append(key)
+        self.pdf_cache.prefetch(keys)
+    
+    def _sharpen_enlarged_panels(self):
+        """
+        Re-render PDFs whose panel has grown larger than the image rendered for it (e.g. after
+        dragging a gap). The new image is mapped onto the old extent, so zoom and pan are kept.
+        """
+        updated = False
+        for i in range(self.num_images):
+            ax = self.axes[i]
+            key = self._pdf_key(i, self.indices[i])
+            if key is None or not ax.images:
+                continue
+            image = ax.images[0]
+            height, width = image.get_array().shape[:2]
+            box = ax.get_position(original=True)
+            if width >= box.width * self.fig.bbox.width or height >= box.height * self.fig.bbox.height:
+                continue  # still at least as sharp as the panel can show
+            extent = image.get_extent()
+            image.set_data(self.pdf_cache.get(key))
+            image.set_extent(extent)
+            updated = True
+        if updated:
+            self.fig.canvas.draw_idle()
     
     def update_display(self):
         """Update all image displays."""
+        # Start rendering all PDFs of this step at once, so that they render in parallel
+        if self._displayed_once:
+            for i in range(self.num_images):
+                key = self._pdf_key(i, self.indices[i])
+                if key is not None:
+                    self.pdf_cache.request(key)
+        
         # Clear and update each subplot
         for i in range(self.num_images):
             ax = self.axes[i]
             ax.clear()
             
             try:
-                img = self._load_image(self.all_files[i][self.indices[i]]) # img is a np.array
+                img = self._load_image(i) # img is a np.array
                 ax.imshow(img)
                 filename = f'{self.all_files[i][self.indices[i]].parent.name}/{self.all_files[i][self.indices[i]].name}'
                 position = f"({self.indices[i] + 1}/{len(self.all_files[i])})"
@@ -177,6 +317,8 @@ class ImageComparator:
 
         # self.fig.tight_layout()
         self.fig.canvas.draw()
+        self._displayed_once = True
+        self._prefetch()
     
     def _on_key(self, event):
         """Handle keyboard events."""
@@ -212,6 +354,9 @@ class ImageComparator:
             self.height_ratios = [1.0] * self.num_rows
             self.width_ratios = [[1.0] * self.num_cols for _ in range(self.num_rows)]
             self._apply_ratios()
+            self.fig.canvas.draw()
+            self._sharpen_enlarged_panels()
+            self._prefetch()
                 
         elif event.key == 'q' or event.key == 'escape':
             # Quit
@@ -294,7 +439,12 @@ class ImageComparator:
         self._apply_ratios()
     
     def _on_release(self, event):
-        self._drag = None
+        if self._drag is not None:
+            self._drag = None
+            # Panel sizes changed: sharpen panels that grew, and render ahead at the new sizes
+            self.fig.canvas.draw()
+            self._sharpen_enlarged_panels()
+            self._prefetch()
     
     def show(self):
         """Display the viewer window."""
@@ -439,7 +589,7 @@ class ConfigDialog:
         layout_frame = ttk.LabelFrame(main_frame, text="Layout Configuration", padding="10") # Labelframe widget is a container used to group other widgets together.
         layout_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
 
-        ttk.Label(layout_frame, text="PDF rendering DPI (higher causes clearer plots but slower):").grid(
+        ttk.Label(layout_frame, text="Maximum PDF rendering DPI (higher allows sharper zooming):").grid(
             row=0, column=0, padx=(0, 10), pady=(10, 0), sticky=tk.W
         )
 
@@ -1063,7 +1213,7 @@ class ConfigDialog:
         except tk.TclError:
             messagebox.showerror(
                 "Invalid PDF DPI",
-                "PDF rendering DPI must be a whole number, for example 150, 200, or 300."
+                "Maximum PDF rendering DPI must be a whole number, for example 150, 200, or 300."
             )
             self.dpi_spinbox.focus_set()
             return
@@ -1071,7 +1221,7 @@ class ConfigDialog:
         if dpi_for_pdf < 1:
             messagebox.showerror(
                 "Invalid PDF DPI",
-                "PDF rendering DPI must be at least 1."
+                "Maximum PDF rendering DPI must be at least 1."
             )
             self.dpi_spinbox.focus_set()
             return

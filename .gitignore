@@ -226,3 +226,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# large generated test PDFs (regenerate with sample_data/generate_sample_data.py)
+sample_data/heavy_pdf/
