@@ -225,11 +225,15 @@ COMPLETE = {
     "spatial_plots": (plot_spatial, ".jpg"),
 }
 
-# scenario 2: same-format directories with gaps, for "Sync Directories Now"
+# scenario 2: directories with gaps and mixed extensions, for "Sync Directories Now"
+# (plot fn, missing samples, main extension, {sample: other extension})
 WITH_GAPS = {
-    "qc_plots": (plot_qc, {"sample_03", "sample_08"}),
-    "expression_plots": (plot_expression, {"sample_05"}),
-    "umap_plots": (plot_umap, {"sample_01", "sample_10", "sample_11"}),
+    "qc_plots": (plot_qc, {"sample_03", "sample_08"}, ".png",
+                 {"sample_02": ".jpg", "sample_07": ".pdf"}),
+    "expression_plots": (plot_expression, {"sample_05"}, ".jpg",
+                         {"sample_04": ".png", "sample_09": ".png", "sample_12": ".pdf"}),
+    "umap_plots": (plot_umap, {"sample_01", "sample_10", "sample_11"}, ".pdf",
+                   {"sample_03": ".png", "sample_06": ".jpg"}),
 }
 
 
@@ -258,11 +262,11 @@ def main():
 
     gaps_root = ROOT / "with_gaps"
     reset(gaps_root)
-    for dirname, (plot_fn, missing) in WITH_GAPS.items():
+    for dirname, (plot_fn, missing, main_ext, other_exts) in WITH_GAPS.items():
         (gaps_root / dirname).mkdir()
         for sample in SAMPLES:
             if sample not in missing:
-                plot_fn(sample, gaps_root / dirname / f"{sample}.png")
+                plot_fn(sample, gaps_root / dirname / f"{sample}{other_exts.get(sample, main_ext)}")
 
     aspect_root = ROOT / "varied_aspect"
     reset(aspect_root)

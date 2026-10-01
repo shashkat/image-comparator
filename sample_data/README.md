@@ -2,7 +2,7 @@
 
 Synthetic plots for manually testing image-comparator. Every plot shows its sample ID in large text, plus its position (`index n/12`) and a per-sample "quality" score. The same sample has the same quality score in every plot type, so you can see right away when the panels drift out of sync.
 
-Regenerate (this wipes and recreates `complete/` and `with_gaps/`, including any sync placeholders):
+Regenerate (this wipes and recreates `complete/`, `with_gaps/` and `varied_aspect/`, including any sync placeholders):
 
 ```sh
 python sample_data/generate_sample_data.py   # needs matplotlib + numpy
@@ -19,15 +19,15 @@ python sample_data/generate_sample_data.py   # needs matplotlib + numpy
 
 Use this for the basic workflow: synchronised navigation, a 2×2 grid, reordering, the custom starting index, and PDF DPI.
 
-## `with_gaps/`: directories with missing samples (all `.png`)
+## `with_gaps/`: directories with missing samples and mixed extensions
 
-| Directory | Missing |
-|---|---|
-| `qc_plots/` | sample_03, sample_08 |
-| `expression_plots/` | sample_05 |
-| `umap_plots/` | sample_01, sample_10, sample_11 |
+| Directory | Missing | Main extension | Other extensions |
+|---|---|---|---|
+| `qc_plots/` | sample_03, sample_08 | `.png` | sample_02 `.jpg`, sample_07 `.pdf` |
+| `expression_plots/` | sample_05 | `.jpg` | sample_04 `.png`, sample_09 `.png`, sample_12 `.pdf` |
+| `umap_plots/` | sample_01, sample_10, sample_11 | `.pdf` | sample_03 `.png`, sample_06 `.jpg` |
 
-Start the comparator without syncing and the panels drift apart (the sample IDs stop matching). Click **Sync Directories Now** and 6 placeholders are created, after which navigation stays aligned. Run the script again to restore the gaps.
+Start the comparator without syncing and the panels drift apart (the sample IDs stop matching). Click **Sync Directories Now** and 6 placeholders are created, each using its directory's main extension, after which navigation stays aligned. Sync matches filenames without their extensions, so `sample_02.jpg` and `sample_02.pdf` count as the same sample. Run the script again to restore the gaps.
 
 ## `varied_aspect/`: very wide, very tall, and shape-changing plots
 

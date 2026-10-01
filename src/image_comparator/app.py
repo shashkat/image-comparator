@@ -12,6 +12,7 @@ Optional dependencies for enhanced features:
 import sys
 import os
 from pathlib import Path
+from collections import Counter
 
 # Set matplotlib backend before importing pyplot
 import matplotlib
@@ -31,11 +32,13 @@ IMAGE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.
 
 
 def get_image_files(directory):
-    """Get all image files in directory, sorted alphabetically."""
+    """Get all image files in directory, sorted alphabetically by filename without extension."""
     files = []
     dir_path = Path(directory).resolve()
     if dir_path.is_dir():
-        for file in sorted(dir_path.iterdir()):
+        # sort on the stem first, so that directories holding the same filenames with
+        # different extensions are ordered identically (e.g. 'a-b.jpg' vs 'a.png')
+        for file in sorted(dir_path.iterdir(), key=lambda f: (f.stem, f.suffix)):
             if file.is_file() and file.suffix.lower() in IMAGE_EXTENSIONS:
                 files.append(file.resolve())
     return files
@@ -506,13 +509,13 @@ class ConfigDialog:
         """Update the status bar message."""
         self.status_label.config(text=message)
 
-    def _get_all_filenames_from_directories(self, directories):
-        """Get union of all image filenames across directories."""
-        all_filenames = set()
+    def _get_all_stems_from_directories(self, directories):
+        """Get union of all image filenames (without extensions) across directories."""
+        all_stems = set()
         for directory in directories:
             for file in get_image_files(directory):
-                all_filenames.add(file.name)
-        return sorted(all_filenames)
+                all_stems.add(file.stem)
+        return sorted(all_stems)
     
     def _create_placeholder_pdf(self, filepath, filename):
         """Create a placeholder PDF with a 'not found' message."""
@@ -596,20 +599,25 @@ class ConfigDialog:
             return
         
         try:
-            # Get all unique filenames across all directories
-            all_filenames = self._get_all_filenames_from_directories(directories)
+            # Get all unique filenames (ignoring extensions) across all directories
+            all_stems = self._get_all_stems_from_directories(directories)
             
             created_files = 0
             failed_pdfs = []
             
-            # For each directory, check which files are missing
+            # For each directory, check which filenames are missing, regardless of extension
             for directory in directories:
                 dir_path = Path(directory)
-                existing_files = {f.name for f in get_image_files(dir_path)}
+                files = get_image_files(dir_path)
+                existing_stems = {f.stem for f in files}
                 
-                missing_files = set(all_filenames) - existing_files
+                # Placeholders take the most common extension in this directory
+                extension = Counter(f.suffix for f in files).most_common(1)[0][0] if files else '.png'
                 
-                for filename in missing_files:
+                missing_stems = sorted(set(all_stems) - existing_stems)
+                
+                for stem in missing_stems:
+                    filename = f"{stem}{extension}"
                     filepath = dir_path / filename
                     
                     # Determine file type and create appropriate placeholder
