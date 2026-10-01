@@ -128,6 +128,16 @@ Use the keyboard arrow keys to navigate:
 
 All displayed plot collections move together, allowing you to compare corresponding samples or images efficiently.
 
+### Resizing panels
+
+Not every plot collection needs the same amount of space — for example, a collection of legends can be given less room than the spatial plots next to it. To resize panels, drag the gaps between them with the mouse (the cursor changes to a resize arrow over a draggable gap):
+
+- **Gap between two panels in a row** — moves the boundary between those two panels. Each row is resized independently.
+- **Gap between two rows** — moves the boundary between those rows.
+- **E** — makes all panels equally sized again.
+
+The panel sizes are kept as you navigate with the arrow keys. Dragging is disabled while the toolbar's zoom or pan mode is active.
+
 ## Uninstalling
 
 - If want to uninstall, simply run:

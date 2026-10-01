@@ -27,6 +27,7 @@ from PIL import Image
 import math
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
+from matplotlib.backend_tools import Cursors
 
 IMAGE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
 
@@ -81,15 +82,16 @@ class ImageComparator:
         # Set up the plot
         fig_width = 8 * self.num_cols
         fig_height = 6 * self.num_rows
-        self.fig, self.axes = plt.subplots(self.num_rows, self.num_cols, 
-                                           figsize=(fig_width, fig_height), 
-                                           layout='constrained')
+        self.fig = plt.figure(figsize=(fig_width, fig_height), layout='constrained')
         
-        # Make axes always iterable (handle single row/col cases)
-        if self.num_images == 1:
-            self.axes = np.array([self.axes])
-        else:
-            self.axes = self.axes.flatten()
+        # Each row gets its own sub-gridspec, so that column widths can be adjusted per row
+        # (by dragging the gaps between panels) without affecting the other rows
+        self.outer_gs = self.fig.add_gridspec(self.num_rows, 1)
+        self.row_gs = [self.outer_gs[r].subgridspec(1, self.num_cols) for r in range(self.num_rows)]
+        self.height_ratios = [1.0] * self.num_rows
+        self.width_ratios = [[1.0] * self.num_cols for _ in range(self.num_rows)]
+        self.axes = np.array([self.fig.add_subplot(self.row_gs[r][0, c])
+                              for r in range(self.num_rows) for c in range(self.num_cols)])
         
         # Hide extra subplots if we don't have enough images to fill the grid
         for i in range(self.num_images, len(self.axes)):
@@ -97,6 +99,13 @@ class ImageComparator:
         
         self.fig.canvas.mpl_connect('key_press_event', self._on_key) # register the self._on_key method as a callback for the matplotlib 
         # event 'key_press_event', which is emitted when a key is pressed on the keyboard when the canvas is active
+        
+        # Mouse callbacks for resizing panels by dragging the gaps between them
+        self._drag = None
+        self._resize_cursor_shown = False
+        self.fig.canvas.mpl_connect('button_press_event', self._on_press)
+        self.fig.canvas.mpl_connect('motion_notify_event', self._on_motion)
+        self.fig.canvas.mpl_connect('button_release_event', self._on_release)
         
         # Display initial images
         self.update_display()
@@ -188,9 +197,94 @@ class ImageComparator:
             else:
                 print("Already at the last images")
                 
+        elif event.key == 'e':
+            # Make all panels equally sized again
+            self.height_ratios = [1.0] * self.num_rows
+            self.width_ratios = [[1.0] * self.num_cols for _ in range(self.num_rows)]
+            self._apply_ratios()
+                
         elif event.key == 'q' or event.key == 'escape':
             # Quit
             plt.close(self.fig)
+    
+    def _apply_ratios(self):
+        """Apply the current row heights and per-row column widths to the grid and redraw."""
+        self.outer_gs.set_height_ratios(self.height_ratios)
+        for r, gs in enumerate(self.row_gs):
+            gs.set_width_ratios(self.width_ratios[r])
+        self.fig.canvas.draw_idle()
+    
+    def _row_boxes(self, r):
+        """Layout boxes (in figure fractions, before aspect-ratio shrinking) of the panels in row r."""
+        return [ax.get_position(original=True) for ax in self.axes[r * self.num_cols:(r + 1) * self.num_cols]]
+    
+    def _find_boundary(self, x, y):
+        """
+        Return the panel boundary under the figure-fraction point (x, y), or None.
+        A boundary is the gap between two neighbouring rows, or between two neighbouring
+        panels in the same row.
+        """
+        tol_x = 6 / self.fig.bbox.width
+        tol_y = 6 / self.fig.bbox.height
+        rows = [self._row_boxes(r) for r in range(self.num_rows)]
+        tops = [max(b.y1 for b in boxes) for boxes in rows]
+        bottoms = [min(b.y0 for b in boxes) for boxes in rows]
+        
+        # Gaps between rows (row r is above row r + 1)
+        for r in range(self.num_rows - 1):
+            if tops[r + 1] - tol_y <= y <= bottoms[r] + tol_y:
+                return {'kind': 'row', 'index': r, 'start': tops[r], 'end': bottoms[r + 1]}
+        
+        # Gaps between panels within the row that contains y
+        for r, boxes in enumerate(rows):
+            if bottoms[r] <= y <= tops[r]:
+                for c in range(self.num_cols - 1):
+                    if boxes[c].x1 - tol_x <= x <= boxes[c + 1].x0 + tol_x:
+                        return {'kind': 'col', 'row': r, 'index': c, 'start': boxes[c].x0, 'end': boxes[c + 1].x1}
+        return None
+    
+    def _toolbar_busy(self):
+        """True while the toolbar's zoom or pan mode is active, so that dragging doesn't conflict with it."""
+        toolbar = getattr(self.fig.canvas, 'toolbar', None)
+        return toolbar is not None and bool(toolbar.mode)
+    
+    def _on_press(self, event):
+        if event.button != 1 or event.dblclick or self._toolbar_busy():
+            return
+        x, y = self.fig.transFigure.inverted().transform((event.x, event.y))
+        self._drag = self._find_boundary(x, y)
+    
+    def _on_motion(self, event):
+        x, y = self.fig.transFigure.inverted().transform((event.x, event.y))
+        
+        if self._drag is None:
+            # Show a resize cursor when hovering over a draggable gap
+            boundary = None if self._toolbar_busy() else self._find_boundary(x, y)
+            if boundary is not None:
+                cursor = Cursors.RESIZE_VERTICAL if boundary['kind'] == 'row' else Cursors.RESIZE_HORIZONTAL
+                self.fig.canvas.set_cursor(cursor)
+                self._resize_cursor_shown = True
+            elif self._resize_cursor_shown:
+                self.fig.canvas.set_cursor(Cursors.POINTER)
+                self._resize_cursor_shown = False
+            return
+        
+        # Split the combined size of the two neighbouring panels at the mouse position.
+        # The span is measured at the start of the drag, from the far edge of the first panel
+        # to the far edge of the second one.
+        d = self._drag
+        pos = x if d['kind'] == 'col' else y
+        fraction = (pos - d['start']) / (d['end'] - d['start'])
+        fraction = min(max(fraction, 0.05), 0.95)
+        
+        ratios = self.width_ratios[d['row']] if d['kind'] == 'col' else self.height_ratios
+        i = d['index']
+        total = ratios[i] + ratios[i + 1]
+        ratios[i], ratios[i + 1] = total * fraction, total * (1 - fraction)
+        self._apply_ratios()
+    
+    def _on_release(self, event):
+        self._drag = None
     
     def show(self):
         """Display the viewer window."""
@@ -200,6 +294,8 @@ class ImageComparator:
         print("Controls:")
         print("  ↑ (Up Arrow)   : Previous set")
         print("  ↓ (Down Arrow) : Next set")
+        print("  Drag gap       : Resize neighbouring panels (gaps between rows or between panels in a row)")
+        print("  E              : Make all panels equally sized again")
         print("  Q or ESC       : Quit")
         print("\nShowing images...")
         plt.show()
