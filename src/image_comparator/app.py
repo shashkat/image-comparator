@@ -34,8 +34,11 @@ from matplotlib.lines import Line2D
 IMAGE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
 
 # PDFs are rendered at OVERSAMPLE times their panel's on-screen size (so that zooming in and
-# enlarging panels stays reasonably sharp), but never above the DPI chosen in the dialog
+# enlarging panels stays reasonably sharp)
 PDF_OVERSAMPLE = 2
+# Upper bound on the DPI that PDFs are rendered at. It is set high so that, in practice, only the
+# panel size limits the rendering resolution
+PDF_MAX_DPI = 4000
 # Rendering targets are rounded up to this many pixels, so that small panel resizes still
 # hit the cache
 PDF_TARGET_STEP = 64
@@ -166,7 +169,7 @@ class GapHandles(Artist):
 
 
 class ImageComparator:
-    def __init__(self, image_paths, num_cols=2, dpi_for_pdf=96):
+    def __init__(self, image_paths, num_cols=2):
         """
         Initialize the image comparator with multiple images.
         
@@ -175,7 +178,6 @@ class ImageComparator:
             num_cols: Number of columns in the grid layout
         """
         self.num_images = len(image_paths)
-        self.dpi_for_pdf = dpi_for_pdf
         self.num_cols = num_cols
         self.num_rows = math.ceil(self.num_images / self.num_cols)
         
@@ -231,7 +233,7 @@ class ImageComparator:
         self.fig.canvas.mpl_connect('figure_leave_event', self._on_leave)
         
         # PDFs are rendered (and rendered ahead for neighbouring steps) in worker processes
-        self.pdf_cache = PdfRenderCache(self.dpi_for_pdf)
+        self.pdf_cache = PdfRenderCache(PDF_MAX_DPI)
         self._displayed_once = False
         self.fig.canvas.mpl_connect('close_event', lambda event: self.pdf_cache.shutdown())
         
@@ -560,7 +562,6 @@ class ConfigDialog:
         self.root.focus_force() # Direct input focus to this widget even if the application doesn't have the focus. Should be used with caution
         
         self.selected_files = []
-        self.dpi_for_pdf = tk.IntVar(value=200) # construct an integer variable
         self.num_cols = tk.IntVar(value=2) # construct an integer variable
         
         self.starting_index_var = tk.StringVar(value="")
@@ -669,28 +670,14 @@ class ConfigDialog:
         layout_frame = ttk.LabelFrame(main_frame, text="Layout Configuration", padding="10") # Labelframe widget is a container used to group other widgets together.
         layout_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
 
-        ttk.Label(layout_frame, text="Maximum PDF rendering DPI (higher allows sharper zooming):").grid(
-            row=0, column=0, padx=(0, 10), pady=(10, 0), sticky=tk.W
-        )
-
-        self.dpi_spinbox = ttk.Spinbox(
-            layout_frame,
-            from_=50,
-            to=1200,
-            increment=50,
-            textvariable=self.dpi_for_pdf,
-            width=10,
-        )
-        self.dpi_spinbox.grid(row=0, column=1, pady=(10, 0), sticky=(tk.W, tk.E))
-        
-        ttk.Label(layout_frame, text="Number of columns in plot grid:").grid(row=1, column=0, padx=(0, 10), sticky=(tk.W))
+        ttk.Label(layout_frame, text="Number of columns in plot grid:").grid(row=0, column=0, padx=(0, 10), sticky=(tk.W))
         self.cols_spinbox = ttk.Spinbox(layout_frame, from_=1, to=10, 
                                         textvariable=self.num_cols, width=10)
-        self.cols_spinbox.grid(row=1, column=1, sticky=(tk.W, tk.E))
+        self.cols_spinbox.grid(row=0, column=1, sticky=(tk.W, tk.E))
 
         # Preview label
         self.preview_label = ttk.Label(layout_frame, text="")
-        self.preview_label.grid(row=2, column=0, columnspan=2, pady=(10, 0))
+        self.preview_label.grid(row=1, column=0, columnspan=2, pady=(10, 0))
         self._update_preview()
         
         # Bind spinbox change
@@ -1288,24 +1275,6 @@ class ConfigDialog:
             self.cols_spinbox.focus_set()
             return
 
-        try:
-            dpi_for_pdf = self.dpi_for_pdf.get()
-        except tk.TclError:
-            messagebox.showerror(
-                "Invalid PDF DPI",
-                "Maximum PDF rendering DPI must be a whole number, for example 150, 200, or 300."
-            )
-            self.dpi_spinbox.focus_set()
-            return
-
-        if dpi_for_pdf < 1:
-            messagebox.showerror(
-                "Invalid PDF DPI",
-                "Maximum PDF rendering DPI must be at least 1."
-            )
-            self.dpi_spinbox.focus_set()
-            return
-
         # Validate that all files exist
         for file in self.selected_files:
             if not os.path.exists(file):
@@ -1352,7 +1321,7 @@ class ConfigDialog:
         
         # Create and show the comparator
         try:
-            comparator = ImageComparator(start_files, num_cols, dpi_for_pdf)
+            comparator = ImageComparator(start_files, num_cols)
             comparator.show()
         except Exception as e:
             messagebox.showerror("Error", f"Error starting comparator:\n{str(e)}")

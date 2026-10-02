@@ -99,23 +99,13 @@ Use the list controls to organize your selection:
 
 The order of selected entries determines the order in which plot collections appear in the comparator.
 
-### 2. Set the rendering DPI (irrelevant if not working with .pdf plots)
-
-PDF plots are rendered to fit their panel on screen (at twice the panel's size, so that zooming in and enlarging panels stays sharp). Use **Maximum PDF rendering DPI** to cap the resolution used for this.
-
-- A higher maximum allows sharper zooming into PDF plots, especially into text and fine lines.
-- A lower maximum renders large PDF pages faster and uses less memory.
-- The default value of `200` is usually a good starting point.
-
-To keep navigation fast, the PDFs of the next and previous steps are rendered in the background while you view the current one, and recently viewed ones are kept in memory. Very complex PDFs (e.g. scatter plots with hundreds of thousands of points) can still take a moment if you navigate faster than they can be rendered.
-
-### 3. Choose the grid layout
+### 2. Choose the grid layout
 
 Set **Number of columns in plot grid** to control the number of plot panels shown in each row.
 
 The application automatically arranges the selected collections in a row-major order into the grid.
 
-### 4. Start comparing
+### 3. Start comparing
 
 Click **Start Comparator**.
 
@@ -128,9 +118,11 @@ Use the keyboard arrow keys to navigate:
 
 All displayed plot collections move together, allowing you to compare corresponding samples or images efficiently.
 
+PDF plots are rendered to fit their panel on screen, at twice the panel's size so that zooming in and enlarging panels stays sharp. To keep navigation fast, the PDFs of the next and previous steps are rendered in the background while you view the current one, and recently viewed ones are kept in memory. Very complex PDFs (e.g. scatter plots with hundreds of thousands of points) can still take a moment if you navigate faster than they can be rendered.
+
 ### Resizing panels
 
-Not every plot collection needs the same amount of space — for example, a collection of legends can be given less room than the spatial plots next to it. To resize panels, drag the gaps between them with the mouse (the cursor changes to a resize arrow over a draggable gap):
+Not every plot collection needs the same amount of space — for example, a collection of legends can be given less room than the spatial plots next to it. To resize panels, drag the gaps between them with the mouse. Draggable gaps are marked with thin gray lines, which turn blue when hovered (the cursor also changes to a resize arrow):
 
 - **Gap between two panels in a row** — moves the boundary between those two panels. Each row is resized independently.
 - **Gap between two rows** — moves the boundary between those rows.
