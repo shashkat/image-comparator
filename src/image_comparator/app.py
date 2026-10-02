@@ -15,6 +15,20 @@ import time
 from pathlib import Path
 from collections import Counter, OrderedDict
 
+try:
+    import tkinter as tk
+    from tkinter import filedialog, ttk, messagebox
+except ImportError:
+    # Some Python installations (e.g. Homebrew's, which pipx uses by default on macOS) don't include tkinter
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    sys.exit(
+        f"Error: image-comparator needs tkinter, which is missing from this Python {version} installation.\n"
+        f"- macOS (Homebrew Python): brew install python-tk@{version}\n"
+        f"- Ubuntu/Debian: sudo apt install python3-tk\n"
+        f"Or reinstall with a standalone Python that includes it:\n"
+        f"  pipx install --force image-comparator --python {version} --fetch-python=always"
+    )
+
 # Set matplotlib backend before importing pyplot
 import matplotlib
 matplotlib.use('TkAgg')  # Use TkAgg backend for compatibility with tkinter
@@ -26,8 +40,6 @@ import pymupdf
 import numpy as np
 from PIL import Image
 import math
-import tkinter as tk
-from tkinter import filedialog, ttk, messagebox
 from matplotlib.backend_tools import Cursors
 from matplotlib.artist import Artist
 from matplotlib.lines import Line2D

@@ -48,9 +48,9 @@ To see whether the directories are in sync without creating any files, press the
 ## Installation
 
 - Ensure that pipx is installed. Depending on your platform, run one of the following in terminal:
-	- macOS
+	- macOS (`python-tk` adds tkinter, which Homebrew's Python doesn't include)
 		```sh
-		brew install pipx
+		brew install pipx python-tk
 		```
 	- Windows
 		```
@@ -58,17 +58,16 @@ To see whether the directories are in sync without creating any files, press the
 		```
 	- Ubuntu/Debian
 		```
-		sudo apt install pipx
+		sudo apt install pipx python3-tk
 		```
 
-- Install image-comparator using pipx:
-	- The supported python versions to build the tool are 3.10, 3.11, 3.12, 3.13. If you already have any of them available in your env, specify them as such:
+- Install image-comparator using pipx (requires Python 3.10 or newer):
+	```sh
+	pipx install image-comparator
+	```
+	- If you don't have Python 3.10 or newer, this command installs a standalone Python automatically (it may take a few minutes to complete):
 		```sh
-		pipx install image-comparator --python 3.12 # change version according to what is available in your env 
-		```
-	- Else, just use this command, which will install a standalone python installation automatically, hence may take a few minutes to complete
-		```sh
-		pipx install image-comparator --python 3.12 --fetch-python=missing
+		pipx install image-comparator --python 3.13 --fetch-python=missing
 		```
 - To ensure that the .local/bin path is in your PATH env variable, run:
 	```sh
