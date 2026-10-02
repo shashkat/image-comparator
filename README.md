@@ -118,7 +118,7 @@ Use the keyboard arrow keys to navigate:
 
 All displayed plot collections move together, allowing you to compare corresponding samples or images efficiently.
 
-PDF plots are rendered to fit their panel on screen, at twice the panel's size so that zooming in and enlarging panels stays sharp. To keep navigation fast, the PDFs of the next and previous steps are rendered in the background while you view the current one, and recently viewed ones are kept in memory. Very complex PDFs (e.g. scatter plots with hundreds of thousands of points) can still take a moment if you navigate faster than they can be rendered.
+PDF plots are rendered to fit their panel on screen, at twice the panel's size so that enlarging panels stays sharp (zooming in re-renders the visible region, see [Viewer modes](#viewer-modes)). To keep navigation fast, the PDFs of the next and previous steps are rendered in the background while you view the current one, and recently viewed ones are kept in memory. Very complex PDFs (e.g. scatter plots with hundreds of thousands of points) can still take a moment if you navigate faster than they can be rendered.
 
 ### Resizing panels
 
@@ -138,6 +138,8 @@ The viewer has three mouse modes, which can be switched with the keyboard instea
 - **O** — toggle zoom mode: drag a rectangle over a plot to zoom into it
 - **P** — toggle pan mode: drag to pan around a plot (right-drag to zoom)
 - **H** — reset the zoom and pan of all panels
+
+When you zoom into a PDF plot, the visible region is re-rendered at full screen resolution shortly after you stop zooming or panning, so that text and fine lines stay sharp at any zoom level. Until it is ready (which can take a few seconds for very complex PDFs), the zoomed-in plot is shown slightly blurred.
 
 ## Uninstalling
 

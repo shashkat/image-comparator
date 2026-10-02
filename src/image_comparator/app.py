@@ -11,6 +11,7 @@ Optional dependencies for enhanced features:
 
 import sys
 import os
+import time
 from pathlib import Path
 from collections import Counter, OrderedDict
 
@@ -42,6 +43,11 @@ PDF_MAX_DPI = 4000
 # Rendering targets are rounded up to this many pixels, so that small panel resizes still
 # hit the cache
 PDF_TARGET_STEP = 64
+# When zoomed in on a PDF, the visible region is re-rendered at OVERSAMPLE times its on-screen size,
+# extended by this fraction of the view on each side, so that small pans don't need a new render
+PDF_ZOOM_MARGIN = 0.25
+# Seconds to wait after the last redraw (e.g. while panning) before re-rendering zoomed-in PDFs
+PDF_ZOOM_SETTLE = 0.15
 # Memory budget for rendered PDF pages kept in the cache
 PDF_CACHE_BYTES = 1024 ** 3
 # Look of the lines marking the draggable gaps between panels (normal, and while hovered/dragged)
@@ -49,17 +55,23 @@ GAP_HANDLE_STYLE = {'color': '#c8c8c8', 'linewidth': 2}
 GAP_HANDLE_ACTIVE_STYLE = {'color': '#3d85c6', 'linewidth': 4}
 
 
-def render_pdf_page(path, max_dpi, max_width, max_height):
+def render_pdf_page(path, max_dpi, max_width, max_height, clip=None):
     """
     Render the first page of a PDF at the highest DPI (at most max_dpi) for which the result
-    fits within max_width x max_height pixels. Runs in worker processes, so it must stay a
-    module-level function.
+    fits within max_width x max_height pixels. With clip = (x0, y0, x1, y1), given as fractions
+    of the page (from the top left), only that region of the page is rendered. Runs in worker
+    processes, so it must stay a module-level function.
     """
     with pymupdf.open(path) as doc:
         page = doc[0]
-        fit_dpi = 72 * min(max_width / page.rect.width, max_height / page.rect.height)
+        rect = page.rect
+        if clip is not None:
+            x0, y0, x1, y1 = clip
+            rect = pymupdf.Rect(rect.x0 + x0 * rect.width, rect.y0 + y0 * rect.height,
+                                rect.x0 + x1 * rect.width, rect.y0 + y1 * rect.height)
+        fit_dpi = 72 * min(max_width / rect.width, max_height / rect.height)
         dpi = max(1, int(min(max_dpi, fit_dpi)))
-        pix = page.get_pixmap(alpha=False, dpi=dpi)
+        pix = page.get_pixmap(alpha=False, dpi=dpi, clip=None if clip is None else rect)
         return np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
 
 
@@ -68,8 +80,8 @@ class PdfRenderCache:
     Renders PDF pages in worker processes and keeps the results in an LRU cache.
 
     Worker processes are used rather than threads because pymupdf holds the GIL while
-    rendering, which would freeze the viewer. Pages are keyed by (path, max_dpi, width, height),
-    so a page is re-rendered when it is needed at a different size.
+    rendering, which would freeze the viewer. Pages are keyed by (path, max_dpi, width, height, clip),
+    so a page is re-rendered when it is needed at a different size or for a different region.
     """
 
     def __init__(self, max_dpi):
@@ -80,8 +92,8 @@ class PdfRenderCache:
         self.cache_bytes = 0
         self.pending = {}            # key -> Future
 
-    def key(self, path, width, height):
-        return (str(path), self.max_dpi, width, height)
+    def key(self, path, width, height, clip=None):
+        return (str(path), self.max_dpi, width, height, clip)
 
     def _store(self, key, img):
         self.cache[key] = img
@@ -114,15 +126,36 @@ class PdfRenderCache:
         self._store(key, img)
         return img
 
+    def ready(self, key):
+        """
+        Return the rendered page for key if it is available, without waiting. Otherwise start
+        rendering it in the background (if it isn't already) and return None. Raises the
+        rendering error if rendering failed.
+        """
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        future = self.pending.get(key)
+        if future is not None and future.done():
+            del self.pending[key]
+            if not future.cancelled():
+                img = future.result()
+                self._store(key, img)
+                return img
+        self.request(key)
+        return None
+
     def prefetch(self, keys):
-        """Render keys in the background (in the given order), dropping queued renders no longer wanted."""
-        wanted = set(keys)
+        """
+        Render keys in the background, in the given order: queued renders are dropped and queued
+        again behind the keys, so that the first keys are rendered first.
+        """
         for key, future in list(self.pending.items()):
             if future.done():
                 del self.pending[key]
                 if not future.cancelled() and future.exception() is None:
                     self._store(key, future.result())
-            elif key not in wanted and future.cancel():
+            elif future.cancel():
                 del self.pending[key]
         for key in keys:
             self.request(key)
@@ -237,6 +270,16 @@ class ImageComparator:
         self._displayed_once = False
         self.fig.canvas.mpl_connect('close_event', lambda event: self.pdf_cache.shutdown())
         
+        # When zoomed in on a PDF, the visible region is re-rendered sharper once the view settles.
+        # A timer checks the view after redraws, and polls for renders to finish.
+        self._zoom_shown = {}   # panel -> {'key', 'clip', 'image'} of the sharper region shown on top
+        self._zoom_wanted = {}  # panel -> {'key', 'clip', 'size'} of the region being rendered
+        self._zoom_failed = set()
+        self._last_draw = 0.0
+        self._zoom_timer = self.fig.canvas.new_timer(interval=100)
+        self._zoom_timer.add_callback(self._on_zoom_timer)
+        self.fig.canvas.mpl_connect('draw_event', self._on_draw)
+        
         # Compute the layout, so that panel sizes are known for rendering the first PDFs
         self.fig.draw_without_rendering()
         
@@ -272,8 +315,11 @@ class ImageComparator:
         return mpimg.imread(str(self.all_files[i][self.indices[i]]))
     
     def _prefetch(self):
-        """Render the PDFs of the neighbouring steps in the background: next, previous, then the one after next."""
-        keys = []
+        """
+        Render PDFs in the background: zoomed-in regions of the current step first, then the
+        neighbouring steps: next, previous, then the one after next.
+        """
+        keys = [wanted['key'] for wanted in self._zoom_wanted.values()]
         for offset in (1, -1, 2):
             for i in range(self.num_images):
                 index = self.indices[i] + offset
@@ -315,6 +361,10 @@ class ImageComparator:
                 if key is not None:
                     self.pdf_cache.request(key)
         
+        # Zoomed-in renders belong to the previous images (and are removed with them by clear())
+        self._zoom_shown = {}
+        self._zoom_wanted = {}
+        
         # Clear and update each subplot
         for i in range(self.num_images):
             ax = self.axes[i]
@@ -353,6 +403,109 @@ class ImageComparator:
         self.fig.canvas.draw()
         self._displayed_once = True
         self._prefetch()
+    
+    def _on_draw(self, event):
+        # (Re)start the timer that re-renders zoomed-in PDFs once the view has settled
+        self._last_draw = time.monotonic()
+        self._zoom_timer.start()
+    
+    def _on_zoom_timer(self):
+        if time.monotonic() - self._last_draw < PDF_ZOOM_SETTLE:
+            return  # the view is still changing, e.g. while panning
+        self._update_zoom_renders()
+        if not self._zoom_wanted:
+            self._zoom_timer.stop()
+    
+    @staticmethod
+    def _covers(clip, view):
+        """True if the region clip contains the region view (both as (x0, y0, x1, y1))."""
+        return clip[0] <= view[0] and clip[1] <= view[1] and view[2] <= clip[2] and view[3] <= clip[3]
+    
+    def _update_zoom_renders(self):
+        """
+        For each PDF panel whose view is zoomed in further than its rendered page can show
+        sharply, render the visible region (with a margin) at the panel's on-screen resolution,
+        and show it on top of the page once it is ready.
+        """
+        changed = False
+        wanted_before = {i: wanted['key'] for i, wanted in self._zoom_wanted.items()}
+        for i in range(self.num_images):
+            ax = self.axes[i]
+            page_key = self._pdf_key(i, self.indices[i])
+            if page_key is None or not ax.images:
+                continue
+            
+            # The visible region as fractions of the page, using the page image's extent
+            page = ax.images[0]
+            height, width = page.get_array().shape[:2]
+            left, right, bottom, top = page.get_extent()
+            (fx0, fx1), (fy0, fy1) = (sorted((x - left) / (right - left) for x in ax.get_xlim()),
+                                      sorted((y - top) / (bottom - top) for y in ax.get_ylim()))
+            # Page pixels needed to show the page at the current zoom with one pixel per screen pixel
+            need_width = ax.bbox.width / (fx1 - fx0)
+            need_height = ax.bbox.height / (fy1 - fy0)
+            view = (max(fx0, 0.0), max(fy0, 0.0), min(fx1, 1.0), min(fy1, 1.0))
+            
+            def sharp(clip, size):
+                return (size[0] >= 0.95 * need_width * (clip[2] - clip[0])
+                        and size[1] >= 0.95 * need_height * (clip[3] - clip[1]))
+            
+            shown = self._zoom_shown.get(i)
+            if view[0] >= view[2] or view[1] >= view[3] or sharp((0, 0, 1, 1), (width, height)):
+                # Nothing visible, or the page itself is sharp enough (e.g. after zooming out)
+                self._zoom_wanted.pop(i, None)
+                if shown is not None:
+                    shown['image'].remove()
+                    del self._zoom_shown[i]
+                    changed = True
+                continue
+            if shown is not None and self._covers(shown['clip'], view) and sharp(shown['clip'], shown['image'].get_array().shape[1::-1]):
+                self._zoom_wanted.pop(i, None)
+                continue
+            
+            wanted = self._zoom_wanted.get(i)
+            if wanted is None or not (self._covers(wanted['clip'], view) and sharp(wanted['clip'], wanted['size'])):
+                margin_x = PDF_ZOOM_MARGIN * (view[2] - view[0])
+                margin_y = PDF_ZOOM_MARGIN * (view[3] - view[1])
+                clip = tuple(round(float(v), 6) for v in (max(view[0] - margin_x, 0.0), max(view[1] - margin_y, 0.0),
+                                                   min(view[2] + margin_x, 1.0), min(view[3] + margin_y, 1.0)))
+                step = PDF_TARGET_STEP
+                size = (math.ceil(PDF_OVERSAMPLE * need_width * (clip[2] - clip[0]) / step) * step,
+                        math.ceil(PDF_OVERSAMPLE * need_height * (clip[3] - clip[1]) / step) * step)
+                key = self.pdf_cache.key(self.all_files[i][self.indices[i]], *size, clip=clip)
+                if key in self._zoom_failed or (shown is not None and shown['key'] == key):
+                    # Can't render it, or already shown (e.g. capped by PDF_MAX_DPI)
+                    self._zoom_wanted.pop(i, None)
+                    continue
+                wanted = self._zoom_wanted[i] = {'key': key, 'clip': clip, 'size': size}
+            
+            try:
+                img = self.pdf_cache.ready(wanted['key'])
+            except Exception as e:
+                print(f"Could not render zoomed-in region of {self.all_files[i][self.indices[i]].name}: {e}")
+                self._zoom_failed.add(wanted['key'])
+                del self._zoom_wanted[i]
+                continue
+            if img is None:
+                continue  # still rendering
+            
+            # Show the region on top of the page, keeping the current view
+            x0, y0, x1, y1 = wanted['clip']
+            xlim, ylim = ax.get_xlim(), ax.get_ylim()
+            image = ax.imshow(img, extent=(left + x0 * (right - left), left + x1 * (right - left),
+                                           top + y1 * (bottom - top), top + y0 * (bottom - top)))
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
+            if shown is not None:
+                shown['image'].remove()
+            self._zoom_shown[i] = {'key': wanted['key'], 'clip': wanted['clip'], 'image': image}
+            del self._zoom_wanted[i]
+            changed = True
+        
+        if {i: wanted['key'] for i, wanted in self._zoom_wanted.items()} != wanted_before:
+            self._prefetch()  # puts the new regions ahead of rendering the neighbouring steps
+        if changed:
+            self.fig.canvas.draw_idle()
     
     def _on_key(self, event):
         """Handle keyboard events."""
