@@ -28,6 +28,8 @@ import math
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 from matplotlib.backend_tools import Cursors
+from matplotlib.artist import Artist
+from matplotlib.lines import Line2D
 
 IMAGE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
 
@@ -39,6 +41,9 @@ PDF_OVERSAMPLE = 2
 PDF_TARGET_STEP = 64
 # Memory budget for rendered PDF pages kept in the cache
 PDF_CACHE_BYTES = 1024 ** 3
+# Look of the lines marking the draggable gaps between panels (normal, and while hovered/dragged)
+GAP_HANDLE_STYLE = {'color': '#c8c8c8', 'linewidth': 2}
+GAP_HANDLE_ACTIVE_STYLE = {'color': '#3d85c6', 'linewidth': 4}
 
 
 def render_pdf_page(path, max_dpi, max_width, max_height):
@@ -136,6 +141,30 @@ def get_image_files(directory):
     return files
 
 
+class GapHandles(Artist):
+    """
+    Lines marking the draggable gaps between panels. Their positions are computed while
+    drawing, after the constrained layout has placed the panels.
+    """
+    def __init__(self, comparator):
+        super().__init__()
+        self.comparator = comparator
+        self.set_in_layout(False)
+        self.set_zorder(10)
+    
+    def draw(self, renderer):
+        if not self.get_visible():
+            return
+        fig = self.figure
+        for boundary, xs, ys in self.comparator._gap_lines(renderer):
+            active = self.comparator._is_active_boundary(boundary)
+            line = Line2D(xs, ys, transform=fig.transFigure, solid_capstyle='round',
+                          **(GAP_HANDLE_ACTIVE_STYLE if active else GAP_HANDLE_STYLE))
+            line.set_figure(fig)
+            line.draw(renderer)
+        self.stale = False
+
+
 class ImageComparator:
     def __init__(self, image_paths, num_cols=2, dpi_for_pdf=96):
         """
@@ -193,10 +222,13 @@ class ImageComparator:
         
         # Mouse callbacks for resizing panels by dragging the gaps between them
         self._drag = None
+        self._hover = None
         self._resize_cursor_shown = False
+        self.fig.add_artist(GapHandles(self))
         self.fig.canvas.mpl_connect('button_press_event', self._on_press)
         self.fig.canvas.mpl_connect('motion_notify_event', self._on_motion)
         self.fig.canvas.mpl_connect('button_release_event', self._on_release)
+        self.fig.canvas.mpl_connect('figure_leave_event', self._on_leave)
         
         # PDFs are rendered (and rendered ahead for neighbouring steps) in worker processes
         self.pdf_cache = PdfRenderCache(self.dpi_for_pdf)
@@ -398,6 +430,45 @@ class ImageComparator:
                         return {'kind': 'col', 'row': r, 'index': c, 'start': boxes[c].x0, 'end': boxes[c + 1].x1}
         return None
     
+    def _gap_lines(self, renderer):
+        """
+        Yield (boundary, xs, ys) for a line in the middle of each draggable gap, in figure
+        fractions. Lines between rows are placed between the upper panels and the titles below.
+        """
+        rows = [self._row_boxes(r) for r in range(self.num_rows)]
+        tops = [max(b.y1 for b in boxes) for boxes in rows]
+        bottoms = [min(b.y0 for b in boxes) for boxes in rows]
+        left = min(b.x0 for boxes in rows for b in boxes)
+        right = max(b.x1 for boxes in rows for b in boxes)
+        
+        row_ys = []
+        for r in range(self.num_rows - 1):
+            titles = [ax.title for ax in self.axes[(r + 1) * self.num_cols:(r + 2) * self.num_cols]
+                      if ax.title.get_text()]
+            lower = tops[r + 1]
+            if titles:
+                lower = max(lower, max(t.get_window_extent(renderer).y1 for t in titles) / self.fig.bbox.height)
+            y = (bottoms[r] + min(lower, bottoms[r])) / 2
+            row_ys.append(y)
+            yield {'kind': 'row', 'index': r}, (left, right), (y, y)
+        
+        for r, boxes in enumerate(rows):
+            # Extend the lines between columns up and down to the lines between rows, so they join
+            top = row_ys[r - 1] if r > 0 else tops[r]
+            bottom = row_ys[r] if r < self.num_rows - 1 else bottoms[r]
+            for c in range(self.num_cols - 1):
+                x = (boxes[c].x1 + boxes[c + 1].x0) / 2
+                yield {'kind': 'col', 'row': r, 'index': c}, (x, x), (bottom, top)
+    
+    @staticmethod
+    def _same_boundary(a, b):
+        return (a is not None and b is not None and a['kind'] == b['kind'] and a['index'] == b['index']
+                and a.get('row') == b.get('row'))
+    
+    def _is_active_boundary(self, boundary):
+        """True if the boundary is being dragged, or hovered over (outside zoom/pan mode)."""
+        return self._same_boundary(boundary, self._drag) or self._same_boundary(boundary, self._hover)
+    
     def _toolbar_busy(self):
         """True while the toolbar's zoom or pan mode is active, so that dragging doesn't conflict with it."""
         toolbar = getattr(self.fig.canvas, 'toolbar', None)
@@ -415,6 +486,10 @@ class ImageComparator:
         if self._drag is None:
             # Show a resize cursor when hovering over a draggable gap
             boundary = None if self._toolbar_busy() else self._find_boundary(x, y)
+            if not self._same_boundary(boundary, self._hover) and (boundary or self._hover):
+                # Highlight the gap under the mouse
+                self._hover = boundary
+                self.fig.canvas.draw_idle()
             if boundary is not None:
                 cursor = Cursors.RESIZE_VERTICAL if boundary['kind'] == 'row' else Cursors.RESIZE_HORIZONTAL
                 self.fig.canvas.set_cursor(cursor)
@@ -445,6 +520,11 @@ class ImageComparator:
             self.fig.canvas.draw()
             self._sharpen_enlarged_panels()
             self._prefetch()
+    
+    def _on_leave(self, event):
+        if self._hover is not None and self._drag is None:
+            self._hover = None
+            self.fig.canvas.draw_idle()
     
     def show(self):
         """Display the viewer window."""
