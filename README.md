@@ -1,6 +1,8 @@
 # image-comparator
 Compare sets of images side by side with keyboard navigation.
 
+**Website:** https://shashkat.github.io/image-comparator/ (use cases and a walkthrough of each feature, with screenshots)
+
 ## About
 `image-comparator` is a desktop application for viewing multiple sets of plot or image files side by side and navigating through them **synchronously** with the keyboard.
 

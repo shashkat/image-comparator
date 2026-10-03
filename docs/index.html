@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>image-comparator</title>
+<meta name="description" content="A desktop app for viewing several folders of plots side by side and stepping through them together with the arrow keys.">
+<style>
+  :root {
+    --bg: #fbfbf9;
+    --surface: #ffffff;
+    --surface-2: #f2f2ee;
+    --text: #1d1f23;
+    --muted: #5d636e;
+    --border: #e2e2dc;
+    --accent: #2f6fb3;
+    --accent-soft: #e6eef8;
+    --code-bg: #f0f0eb;
+    --shadow: 0 1px 2px rgba(20, 24, 30, .06), 0 8px 28px rgba(20, 24, 30, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15171a;
+      --surface: #1d2024;
+      --surface-2: #24282d;
+      --text: #e7e8ea;
+      --muted: #a0a6b0;
+      --border: #30353b;
+      --accent: #7fb0e8;
+      --accent-soft: #1f2d3d;
+      --code-bg: #24282d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171a;
+    --surface: #1d2024;
+    --surface-2: #24282d;
+    --text: #e7e8ea;
+    --muted: #a0a6b0;
+    --border: #30353b;
+    --accent: #7fb0e8;
+    --accent-soft: #1f2d3d;
+    --code-bg: #24282d;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .35);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, kbd, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+  code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+  kbd {
+    display: inline-block; min-width: 1.8em; padding: .05em .45em; text-align: center;
+    background: var(--surface); border: 1px solid var(--border); border-bottom-width: 2px;
+    border-radius: 5px; font-size: .85em;
+  }
+  img { max-width: 100%; display: block; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+  /* Navigation */
+  nav.top {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  nav.top .wrap { display: flex; align-items: center; gap: 24px; height: 56px; }
+  nav.top .brand { font-weight: 650; color: var(--text); }
+  nav.top .links { display: flex; gap: 20px; margin-left: auto; font-size: .93rem; }
+  nav.top .links a { color: var(--muted); }
+  nav.top .links a:hover { color: var(--text); text-decoration: none; }
+  @media (max-width: 720px) { nav.top .links .optional { display: none; } }
+
+  /* Hero */
+  header.hero { padding: 64px 0 40px; text-align: center; }
+  header.hero h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; margin: 0 0 16px; letter-spacing: -.02em; }
+  header.hero p.lede { font-size: 1.15rem; color: var(--muted); max-width: 640px; margin: 0 auto 28px; }
+  .install {
+    display: inline-flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 10px 10px 18px; box-shadow: var(--shadow); max-width: 100%;
+  }
+  .install code { background: none; padding: 0; font-size: 1rem; white-space: nowrap; overflow-x: auto; }
+  .install code::before { content: "$ "; color: var(--muted); }
+  button.copy {
+    font: inherit; font-size: .85rem; cursor: pointer;
+    background: var(--accent-soft); color: var(--accent); border: 0; border-radius: 6px; padding: 6px 12px;
+  }
+  @media (max-width: 480px) { .install code { font-size: .8rem; } .install { padding-left: 12px; } }
+  .hero-links { margin-top: 18px; font-size: .95rem; color: var(--muted); }
+  .hero-links a { margin: 0 8px; }
+
+  /* Screenshot frames */
+  .window {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .window .bar {
+    display: flex; align-items: center; gap: 7px; padding: 9px 12px;
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    font-size: .78rem; color: var(--muted);
+  }
+  .window .bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--border); display: inline-block; }
+  .window .bar span { margin-left: 8px; }
+  .window img { width: 100%; background: #fff; }
+  .hero-shot { margin-top: 48px; }
+  figcaption { font-size: .88rem; color: var(--muted); margin-top: 10px; text-align: center; }
+
+  /* Sections */
+  section { padding: 56px 0; border-top: 1px solid var(--border); }
+  section h2 { font-size: 1.75rem; letter-spacing: -.01em; margin: 0 0 8px; }
+  section .intro { color: var(--muted); max-width: 720px; margin: 0 0 32px; }
+  h3 { font-size: 1.2rem; margin: 0 0 8px; }
+
+  /* Use cases */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .card h3 { font-size: 1.05rem; }
+  .card p { margin: 0 0 12px; color: var(--muted); font-size: .95rem; }
+  .card .dirs { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem; color: var(--text);
+    background: var(--code-bg); border-radius: 6px; padding: 8px 10px; white-space: pre; overflow-x: auto; margin: 0; }
+
+  /* Feature walkthrough */
+  .feature { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 40px; align-items: start; padding: 32px 0; }
+  .feature + .feature { border-top: 1px dashed var(--border); }
+  .feature .step { font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+  .feature p { margin: 0 0 12px; }
+  .feature ul { margin: 0 0 12px; padding-left: 20px; }
+  .feature li { margin-bottom: 4px; }
+  .feature .when { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; font-size: .93rem; }
+  .feature .when strong { color: var(--accent); }
+  @media (max-width: 860px) { .feature { grid-template-columns: 1fr; gap: 20px; } }
+
+  /* Before/after toggle */
+  .toggle { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; margin-bottom: 10px; }
+  .toggle button {
+    font: inherit; font-size: .85rem; cursor: pointer; border: 0; background: none; color: var(--muted);
+    padding: 5px 14px; border-radius: 6px;
+  }
+  .toggle button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .compare img[hidden] { display: none; }
+
+  /* Shortcuts */
+  table { border-collapse: collapse; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { background: var(--surface-2); font-size: .85rem; color: var(--muted); font-weight: 600; }
+  td:first-child { white-space: nowrap; width: 1%; }
+
+  /* Install */
+  .steps { counter-reset: step; list-style: none; padding: 0; margin: 0; max-width: 760px; }
+  .steps > li { counter-increment: step; position: relative; padding-left: 44px; margin-bottom: 24px; }
+  .steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: 0;
+    width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+    font-weight: 650; font-size: .9rem; display: grid; place-items: center;
+  }
+  pre { background: var(--code-bg); border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin: 8px 0; }
+  .os { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .os div { font-size: .9rem; color: var(--muted); }
+  .os pre { margin-top: 4px; color: var(--text); }
+  .note { font-size: .9rem; color: var(--muted); }
+
+  .tree { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; align-items: start; }
+  .tree.stacked { grid-template-columns: 1fr; }
+  .tree pre { margin: 0; }
+  .window img { cursor: zoom-in; }
+
+  footer { border-top: 1px solid var(--border); padding: 32px 0 48px; color: var(--muted); font-size: .9rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="brand" href="#">image-comparator</a>
+    <div class="links">
+      <a class="optional" href="#use-cases">Use cases</a>
+      <a class="optional" href="#features">Features</a>
+      <a class="optional" href="#shortcuts">Shortcuts</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/shashkat/image-comparator">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Flip through folders of plots, side by side.</h1>
+    <p class="lede">image-comparator shows matching plots from several folders in one grid. Press <kbd>↓</kbd> and every panel moves to the next sample at the same time.</p>
+    <div class="install">
+      <code id="install-cmd">pipx install image-comparator</code>
+      <button class="copy" data-copy="install-cmd">Copy</button>
+    </div>
+    <div class="hero-links">
+      <a href="#install">Setup instructions</a> ·
+      <a href="https://pypi.org/project/image-comparator/">PyPI</a> ·
+      <a href="https://github.com/shashkat/image-comparator">Source on GitHub</a>
+    </div>
+    <figure class="hero-shot">
+      <div class="window">
+        <div class="bar"><i></i><i></i><i></i><span>Image Comparator</span></div>
+        <img src="assets/navigation.webp" width="1280" height="960" alt="A 2 by 2 grid of a QC histogram, a gene expression bar chart, a UMAP and a spatial heatmap, stepping through samples 1 to 5 together.">
+      </div>
+      <figcaption>Four plot types for the same sample, stepping through samples together. Each plot's title shows its file and position.</figcaption>
+    </figure>
+  </div>
+</header>
+
+<section id="problem">
+  <div class="wrap">
+    <h2>The problem it solves</h2>
+    <p class="intro">An analysis pipeline often writes one plot per sample into a separate folder for each plot type. Reviewing them means opening <code>qc_plots/sample_07.png</code>, then <code>umap_plots/sample_07.pdf</code>, then <code>spatial_plots/sample_07.jpg</code>, and doing it all again for sample 8. image-comparator puts each folder in its own panel and keeps the panels on the same sample while you step through with the arrow keys.</p>
+    <p class="note">Files are matched by their position in each folder after sorting by name, so name plots by sample (the plot type is already in the folder name). PNG, JPEG, TIFF, BMP, GIF and PDF are supported, and can be mixed.</p>
+  </div>
+</section>
+
+<section id="use-cases">
+  <div class="wrap">
+    <h2>Use cases</h2>
+    <p class="intro">Any time you have the same set of things plotted several ways, or the same plots produced several times.</p>
+    <div class="cards">
+      <div class="card">
+        <h3>QC next to results</h3>
+        <p>Check each sample's quality metrics alongside its downstream analysis, so a strange cluster can be traced back to a poor-quality sample.</p>
+<pre class="dirs">qc_plots/
+umap_plots/
+spatial_plots/</pre>
+      </div>
+      <div class="card">
+        <h3>Before and after a change</h3>
+        <p>Compare figures from two versions of a pipeline, or before and after a parameter change, to see which samples it actually affected.</p>
+<pre class="dirs">results_v1/figures/
+results_v2/figures/</pre>
+      </div>
+      <div class="card">
+        <h3>Parameter sweeps and model runs</h3>
+        <p>Put the same diagnostic plot from several runs (settings, seeds, checkpoints) in one grid and scan through every input.</p>
+<pre class="dirs">run_lr0.01/plots/
+run_lr0.001/plots/
+run_lr0.0001/plots/</pre>
+      </div>
+      <div class="card">
+        <h3>Reviewing many figures fast</h3>
+        <p>Hundreds of samples to check by eye? Lay out the plot types you need, then hold <kbd>↓</kbd>. Upcoming PDFs are rendered in the background so each step is quick.</p>
+<pre class="dirs">sample_001 … sample_480</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>A walk through the tool</h2>
+    <p class="intro">What each part of the app is for, and when you'd reach for it. All screenshots are produced by the app from the example data in the repository's <code>sample_data/</code> folder.</p>
+
+    <div class="feature">
+      <div>
+        <div class="step">1 · Start window</div>
+        <h3>Pick a starting plot from each folder</h3>
+        <p>Click <strong>Add Files</strong> and choose one plot from each folder you want to compare. The app finds every other plot in those folders, sorts them, and starts at the plots you picked.</p>
+        <ul>
+          <li><strong>Move Up / Move Down</strong> set the order of the panels in the grid (left to right, then top to bottom).</li>
+          <li><strong>Number of columns</strong> sets the grid shape, e.g. 4 folders as 2×2 or 4×1.</li>
+          <li><strong>Comparator starting index</strong> jumps straight to, say, sample 40 instead of starting at the plots you picked.</li>
+        </ul>
+        <div class="when"><strong>When to use it:</strong> every session starts here. Pick the files of a sample you're curious about to open the viewer right on it.</div>
+      </div>
+      <figure style="margin:0">
+        <div class="window">
+          <div class="bar"><i></i><i></i><i></i><span>Image Comparator Configuration</span></div>
+          <img src="assets/start-window.webp" alt="The start window, listing four selected plot files, with starting index, layout and directory synchronization sections." loading="lazy">
+        </div>
+      </figure>
+    </div>
+
+    <div class="feature">
+      <div>
+        <div class="step">2 · Navigation</div>
+        <h3>Step through samples together</h3>
+        <p><kbd>↓</kbd> shows the next sample in every panel, <kbd>↑</kbd> the previous one. The window title shows where you are (e.g. <em>Index 4/12</em>), and each panel's title shows its file name and position in its folder.</p>
+        <p>The PDFs for the next and previous steps are rendered in the background while you look at the current one, so navigating stays fast even with heavy PDFs.</p>
+        <div class="when"><strong>When to use it:</strong> this is the main loop. Panel sizes and the grid stay the same as you move, so your eye can go to the same spot in every plot.</div>
+      </div>
+      <div>
+        <div class="tree stacked">
+          <div>
+            <h3>You point it at</h3>
+<pre>qc_plots/          umap_plots/
+├── sample_01.png  ├── sample_01.pdf
+├── sample_02.png  ├── sample_02.pdf
+└── sample_03.png  └── sample_03.pdf</pre>
+          </div>
+          <div>
+            <h3>And step through</h3>
+            <table>
+              <tr><th>Press</th><th>Left panel</th><th>Right panel</th></tr>
+              <tr><td>start</td><td><code>sample_01.png</code></td><td><code>sample_01.pdf</code></td></tr>
+              <tr><td><kbd>↓</kbd></td><td><code>sample_02.png</code></td><td><code>sample_02.pdf</code></td></tr>
+              <tr><td><kbd>↓</kbd></td><td><code>sample_03.png</code></td><td><code>sample_03.pdf</code></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <div>
+        <div class="step">3 · Directory synchronization</div>
+        <h3>Keep folders in step when samples are missing</h3>
+        <p>Because files are matched by position, a folder with a missing sample shifts everything after it. In the <em>Out of sync</em> view, the middle panel shows <code>sample_03</code> while the others have already moved on to <code>sample_04</code>.</p>
+        <ul>
+          <li><strong>Check Sync Status</strong> lists, for each folder, the samples missing from it and any sample saved twice with different extensions. Nothing is changed.</li>
+          <li><strong>Sync Directories Now</strong> creates a clearly labelled “Plot Not Found” placeholder for every missing sample, so all folders line up again.</li>
+        </ul>
+        <div class="when"><strong>When to use it:</strong> whenever some samples failed a step of the pipeline, or a plot type only exists for some samples. Files are matched by name without extension, so <code>sample_02.png</code> and <code>sample_02.pdf</code> count as the same sample.</div>
+      </div>
+      <figure style="margin:0" class="compare">
+        <div class="toggle" role="group" aria-label="Show before or after syncing">
+          <button aria-pressed="true" data-show="sync-before">Out of sync</button>
+          <button aria-pressed="false" data-show="sync-after">After syncing</button>
+        </div>
+        <div class="window">
+          <div class="bar"><i></i><i></i><i></i><span>Image Comparator (Index 3)</span></div>
+          <img id="sync-before" src="assets/sync-before.webp" alt="Three panels showing samples 4, 3 and 4: the folders have drifted out of step." loading="lazy">
+          <img id="sync-after" src="assets/sync-after.webp" alt="Three panels all on sample 3, with a placeholder where the QC plot for sample 3 is missing." loading="lazy" hidden>
+        </div>
+      </figure>
+    </div>
+
+    <div class="feature">
+      <div>
+        <div class="step">4 · Resizing panels</div>
+        <h3>Give each plot the space it needs</h3>
+        <p>Plots don't all share a shape. A genome coverage track is very wide, a dot plot of 60 genes is very tall, and a legend needs hardly any room. Drag the gap between two panels to move the boundary between them.</p>
+        <ul>
+          <li>Gaps you can drag are marked with thin gray lines, which turn blue under the mouse.</li>
+          <li>Each row's columns are resized independently, and rows can be resized too.</li>
+          <li><kbd>E</kbd> makes all panels equal again. Sizes are kept as you navigate.</li>
+        </ul>
+        <div class="when"><strong>When to use it:</strong> when an unusually wide or tall plot is shrunk to a sliver in an equal grid. In the example, the coverage track gets more width and the tall dot plot gives up width it can't use.</div>
+      </div>
+      <figure style="margin:0" class="compare">
+        <div class="toggle" role="group" aria-label="Show equal or resized panels">
+          <button aria-pressed="false" data-show="resize-before">Equal panels</button>
+          <button aria-pressed="true" data-show="resize-after">After dragging</button>
+        </div>
+        <div class="window">
+          <div class="bar"><i></i><i></i><i></i><span>Image Comparator (Index 1/12)</span></div>
+          <img id="resize-before" src="assets/resize-before.webp" alt="Four equally sized panels where a very wide and a very tall plot are both tiny." loading="lazy" hidden>
+          <img id="resize-after" src="assets/resize-after.webp" alt="The same grid after resizing: the wide plot spans most of the top row and the tall plot has a narrow column." loading="lazy">
+        </div>
+      </figure>
+    </div>
+
+    <div class="feature">
+      <div>
+        <div class="step">5 · Zoom and pan</div>
+        <h3>Look closely, and stay sharp</h3>
+        <p>Press <kbd>O</kbd> and drag a rectangle to zoom into a plot, or <kbd>P</kbd> to drag it around. <kbd>H</kbd> resets every panel, and <kbd>D</kbd> returns to resizing mode.</p>
+        <p>PDFs are vector graphics, so when you zoom into one, the visible region is re-rendered at screen resolution a moment after you stop. Small text, thin lines and overlapping points stay crisp at any zoom.</p>
+        <div class="when"><strong>When to use it:</strong> dense scatter plots, small axis labels, or checking whether two clusters really overlap. Zoom is kept per panel, and is reset when you move to the next sample.</div>
+      </div>
+      <figure style="margin:0" class="compare">
+        <div class="toggle" role="group" aria-label="Show while zooming or after re-rendering">
+          <button aria-pressed="false" data-show="zoom-before">Right after zooming</button>
+          <button aria-pressed="true" data-show="zoom-after">A moment later</button>
+        </div>
+        <div class="window">
+          <div class="bar"><i></i><i></i><i></i><span>UMAP PDF, zoomed in 6×</span></div>
+          <img id="zoom-before" src="assets/zoom-before.webp" alt="A zoomed-in region of a UMAP scatter plot, blurry." loading="lazy" hidden>
+          <img id="zoom-after" src="assets/zoom-after.webp" alt="The same region re-rendered: points and grid lines are sharp." loading="lazy">
+        </div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="shortcuts">
+  <div class="wrap">
+    <h2>Keyboard shortcuts</h2>
+    <p class="intro">In the plot window. The toolbar buttons at the bottom of the window do the same as <kbd>O</kbd>, <kbd>P</kbd> and <kbd>H</kbd>.</p>
+    <table>
+      <tr><th>Key</th><th>Action</th></tr>
+      <tr><td><kbd>↓</kbd> / <kbd>↑</kbd></td><td>Next / previous sample in every panel</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Default mode: drag the gaps between panels to resize them</td></tr>
+      <tr><td><kbd>O</kbd></td><td>Toggle zoom mode: drag a rectangle to zoom in</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Toggle pan mode: drag to pan, right-drag to zoom</td></tr>
+      <tr><td><kbd>H</kbd></td><td>Reset zoom and pan of all panels</td></tr>
+      <tr><td><kbd>E</kbd></td><td>Make all panels equally sized again</td></tr>
+      <tr><td><kbd>Q</kbd> / <kbd>Esc</kbd></td><td>Quit</td></tr>
+    </table>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="intro">image-comparator is a desktop app for macOS, Linux and Windows. It needs Python 3.10 or newer with tkinter. <a href="https://pipx.pypa.io/">pipx</a> installs it as a standalone command.</p>
+    <ol class="steps">
+      <li>
+        <h3>Install pipx (and tkinter)</h3>
+        <div class="os">
+          <div>macOS (Homebrew)<pre>brew install pipx python-tk</pre></div>
+          <div>Ubuntu / Debian<pre>sudo apt install pipx python3-tk</pre></div>
+          <div>Windows<pre>py -m pip install --user pipx</pre></div>
+        </div>
+        <p class="note">Homebrew's and Debian's Python come without tkinter, which the app's windows are built with; <code>python-tk</code> / <code>python3-tk</code> add it.</p>
+      </li>
+      <li>
+        <h3>Install image-comparator</h3>
+<pre>pipx install image-comparator
+pipx ensurepath   # makes the command available; restart your terminal afterwards</pre>
+        <p class="note">No Python 3.10+ on your system? <code>pipx install image-comparator --python 3.13 --fetch-python=missing</code> downloads a standalone Python first.</p>
+      </li>
+      <li>
+        <h3>Run it</h3>
+<pre>image-comparator</pre>
+        <p class="note">To try it out, clone the repository and open plots from <code>sample_data/complete/</code>, or <code>sample_data/with_gaps/</code> to try directory sync.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>image-comparator · MIT License</span>
+    <span><a href="https://github.com/shashkat/image-comparator">GitHub</a> · <a href="https://pypi.org/project/image-comparator/">PyPI</a> · <a href="https://github.com/shashkat/image-comparator/issues">Report an issue</a></span>
+  </div>
+</footer>
+
+<script>
+  // Before/after toggles
+  document.querySelectorAll('.compare').forEach(function (figure) {
+    var buttons = figure.querySelectorAll('.toggle button');
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        buttons.forEach(function (other) {
+          var selected = other === button;
+          other.setAttribute('aria-pressed', String(selected));
+          document.getElementById(other.dataset.show).hidden = !selected;
+        });
+      });
+    });
+  });
+
+  // Open screenshots at full size
+  document.querySelectorAll('.window img').forEach(function (img) {
+    img.addEventListener('click', function () { window.open(img.src, '_blank'); });
+  });
+
+  // Copy the install command
+  document.querySelectorAll('button.copy').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var text = document.getElementById(button.dataset.copy).textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        button.textContent = 'Copied';
+        setTimeout(function () { button.textContent = 'Copy'; }, 1500);
+      });
+    });
+  });
+</script>
+</body>
+</html>
