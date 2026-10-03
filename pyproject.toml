@@ -34,3 +34,6 @@ dependencies = [
 
 [project.scripts]
 image-comparator = "image_comparator.app:main"
+
+[tool.setuptools.package-data]
+image_comparator = ["assets/*.png"]

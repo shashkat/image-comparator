@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/shashkat/image-comparator/main/icons/logo-256.png" width="128" alt="image-comparator logo">
+</p>
+
 # image-comparator
 Compare sets of images side by side with keyboard navigation.
 

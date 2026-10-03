@@ -44,6 +44,9 @@ from matplotlib.backend_tools import Cursors
 from matplotlib.artist import Artist
 from matplotlib.lines import Line2D
 
+# Logo images shipped with the package
+ASSETS_DIR = Path(__file__).resolve().parent / 'assets'
+
 IMAGE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif'}
 
 # PDFs are rendered at OVERSAMPLE times their panel's on-screen size (so that zooming in and
@@ -176,6 +179,16 @@ class PdfRenderCache:
         self.pool.shutdown(wait=False, cancel_futures=True)
 
 
+def set_window_icon(window):
+    """Use the logo as the icon of a Tk window (title bar, taskbar, and the Dock on macOS)."""
+    try:
+        images = [tk.PhotoImage(master=window, file=str(ASSETS_DIR / name)) for name in ('logo-256.png', 'logo-48.png')]
+        window.iconphoto(True, *images)
+        window._logo_images = images  # Tk drops images that are no longer referenced from Python
+    except tk.TclError:
+        pass  # the window works without an icon
+
+
 def get_image_files(directory):
     """Get all image files in directory, sorted alphabetically by filename without extension."""
     files = []
@@ -250,6 +263,10 @@ class ImageComparator:
         fig_width = 8 * self.num_cols
         fig_height = 6 * self.num_rows
         self.fig = plt.figure(figsize=(fig_width, fig_height), layout='constrained')
+        # Replace matplotlib's window icon with the logo
+        window = getattr(self.fig.canvas.manager, 'window', None)
+        if isinstance(window, tk.Misc):
+            set_window_icon(window)
         
         # Each row gets its own sub-gridspec, so that column widths can be adjusted per row
         # (by dragging the gaps between panels) without affecting the other rows
@@ -718,6 +735,7 @@ class ConfigDialog:
     def __init__(self):
         self.root = tk.Tk() # self.root is toplevel widget on a certain screen
         self.root.title("Image Comparator Configuration")
+        set_window_icon(self.root)
         self.root.geometry("800x760")
         
         # Force window to appear on top and gain focus
